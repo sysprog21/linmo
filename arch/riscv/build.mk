@@ -48,4 +48,4 @@ $(BUILD_KERNEL_DIR)/%.o: $(ARCH_DIR)/%.c | $(BUILD_DIR)
 
 run:
 	@$(call notice, Ready to launch Linmo kernel + application.)
-	$(Q)qemu-system-riscv32 -machine virt -nographic -bios none -kernel $(BUILD_DIR)/image.elf -nographic
+	$(Q)qemu-system-riscv32 -smp 4 -machine virt -nographic -bios none -kernel $(BUILD_DIR)/image.elf -nographic
