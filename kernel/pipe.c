@@ -1,11 +1,16 @@
 #include <lib/libc.h>
+#include <hal.h>
+#include <spinlock.h>
 #include <sys/pipe.h>
 #include <sys/task.h>
 
 #include "private/error.h"
 #include "private/utils.h"
 
-static inline bool pipe_is_empty(const pipe_t *p)
+static spinlock_t pipe_lock = SPINLOCK_INITIALIZER;
+static uint32_t pipe_flags = 0;
+
+static inline int pipe_is_empty(const pipe_t *p)
 {
     return p->used == 0;
 }
@@ -64,9 +69,9 @@ int32_t mo_pipe_destroy(pipe_t *p)
 
 void mo_pipe_flush(pipe_t *p)
 {
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&pipe_lock, &pipe_flags);
     p->head = p->tail = p->used = 0;
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&pipe_lock, pipe_flags);
 }
 
 int32_t mo_pipe_size(pipe_t *p)
@@ -78,13 +83,13 @@ int32_t mo_pipe_size(pipe_t *p)
 static void pipe_wait_until_readable(pipe_t *p)
 {
     while (1) {
-        CRITICAL_ENTER();
+        spin_lock_irqsave(&pipe_lock, &pipe_flags);
         if (!pipe_is_empty(p)) {
-            CRITICAL_LEAVE();
+            spin_unlock_irqrestore(&pipe_lock, pipe_flags);
             return;
         }
         /* nothing to read – drop critical section and yield CPU */
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&pipe_lock, pipe_flags);
         mo_task_wfi();
     }
 }
@@ -92,13 +97,13 @@ static void pipe_wait_until_readable(pipe_t *p)
 static void pipe_wait_until_writable(pipe_t *p)
 {
     while (1) {
-        CRITICAL_ENTER();
+        spin_lock_irqsave(&pipe_lock, &pipe_flags);
         if (!pipe_is_full(p)) {
-            CRITICAL_LEAVE();
+            spin_unlock_irqrestore(&pipe_lock, pipe_flags);
             return;
         }
         /* buffer full – yield until space is available */
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&pipe_lock, pipe_flags);
         mo_task_wfi();
     }
 }
@@ -113,9 +118,9 @@ int32_t mo_pipe_read(pipe_t *p, char *dst, uint16_t len)
     while (i < len) {
         pipe_wait_until_readable(p);
 
-        CRITICAL_ENTER();
+        spin_lock_irqsave(&pipe_lock, &pipe_flags);
         dst[i++] = pipe_get_byte(p);
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&pipe_lock, pipe_flags);
     }
     return i;
 }
@@ -129,9 +134,9 @@ int32_t mo_pipe_write(pipe_t *p, const char *src, uint16_t len)
     while (i < len) {
         pipe_wait_until_writable(p);
 
-        CRITICAL_ENTER();
+        spin_lock_irqsave(&pipe_lock, &pipe_flags);
         pipe_put_byte(p, src[i++]);
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&pipe_lock, pipe_flags);
     }
     return i;
 }
@@ -143,10 +148,10 @@ int32_t mo_pipe_nbread(pipe_t *p, char *dst, uint16_t len)
         return ERR_FAIL;
 
     uint16_t i = 0;
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&pipe_lock, &pipe_flags);
     while (i < len && !pipe_is_empty(p))
         dst[i++] = pipe_get_byte(p);
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&pipe_lock, pipe_flags);
 
     return i;
 }
@@ -157,10 +162,10 @@ int32_t mo_pipe_nbwrite(pipe_t *p, const char *src, uint16_t len)
         return ERR_FAIL;
 
     uint16_t i = 0;
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&pipe_lock, &pipe_flags);
     while (i < len && !pipe_is_full(p))
         pipe_put_byte(p, src[i++]);
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&pipe_lock, pipe_flags);
 
     return i;
 }
