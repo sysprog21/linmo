@@ -8,6 +8,7 @@
  */
 
 #include <hal.h>
+#include <spinlock.h>
 #include <sys/semaphore.h>
 #include <sys/task.h>
 
@@ -24,6 +25,9 @@ struct sem_t {
 
 /* Magic number for semaphore validation */
 #define SEM_MAGIC 0x53454D00 /* "SEM\0" */
+
+static spinlock_t semaphore_lock = SPINLOCK_INITIALIZER;
+static uint32_t semaphore_flags = 0;
 
 static inline bool sem_is_valid(const sem_t *s)
 {
@@ -80,11 +84,11 @@ int32_t mo_sem_destroy(sem_t *s)
     if (unlikely(!sem_is_valid(s)))
         return ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&semaphore_lock, &semaphore_flags);
 
     /* Check if any tasks are waiting - unsafe to destroy if so */
     if (unlikely(queue_count(s->wait_q) > 0)) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
         return ERR_TASK_BUSY;
     }
 
@@ -93,7 +97,7 @@ int32_t mo_sem_destroy(sem_t *s)
     queue_t *wait_q = s->wait_q;
     s->wait_q = NULL;
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
 
     /* Clean up resources outside critical section */
     queue_destroy(wait_q);
@@ -108,19 +112,19 @@ void mo_sem_wait(sem_t *s)
         panic(ERR_SEM_OPERATION);
     }
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&semaphore_lock, &semaphore_flags);
 
     /* Fast path: resource available and no waiters (preserves FIFO ordering) */
     if (likely(s->count > 0 && queue_count(s->wait_q) == 0)) {
         s->count--;
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
         return;
     }
 
     /* Slow path: must wait for resource */
     /* Verify wait queue has capacity before attempting to block */
     if (unlikely(queue_count(s->wait_q) >= s->max_waiters)) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
         panic(ERR_SEM_OPERATION); /* Queue overflow - system error */
     }
 
@@ -145,7 +149,7 @@ int32_t mo_sem_trywait(sem_t *s)
 
     int32_t result = ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&semaphore_lock, &semaphore_flags);
 
     /* Only succeed if resource available AND no waiters (preserves FIFO) */
     if (s->count > 0 && queue_count(s->wait_q) == 0) {
@@ -153,7 +157,7 @@ int32_t mo_sem_trywait(sem_t *s)
         result = ERR_OK;
     }
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
     return result;
 }
 
@@ -167,7 +171,7 @@ void mo_sem_signal(sem_t *s)
     bool should_yield = false;
     tcb_t *awakened_task = NULL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&semaphore_lock, &semaphore_flags);
 
     /* Check if any tasks are waiting for resources */
     if (queue_count(s->wait_q) > 0) {
@@ -198,7 +202,7 @@ void mo_sem_signal(sem_t *s)
          */
     }
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
 
     /* Yield outside critical section if we awakened a task.
      * This improves system responsiveness by allowing the awakened task to run
@@ -228,9 +232,9 @@ int32_t mo_sem_waiting_count(sem_t *s)
 
     int32_t count;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&semaphore_lock, &semaphore_flags);
     count = queue_count(s->wait_q);
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&semaphore_lock, semaphore_flags);
 
     return count;
 }
