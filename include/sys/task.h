@@ -108,39 +108,6 @@ extern kcb_t *kcb;
 /* Task lookup cache size for frequently accessed tasks */
 #define TASK_CACHE_SIZE 4
 
-/* Disables/enables ALL maskable interrupts globally.
- * This provides the strongest protection against concurrency from both other
- * tasks and all ISRs. Use this when modifying data shared with any ISR.
- * WARNING: This increases interrupt latency. Use NOSCHED macros if protection
- * is only needed against task preemption.
- */
-#define CRITICAL_ENTER()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _di();           \
-    } while (0)
-#define CRITICAL_LEAVE()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _ei();           \
-    } while (0)
-
-/* Disables/enables ONLY the scheduler timer interrupt.
- * This is a lighter-weight critical section that prevents task preemption but
- * allows other hardware interrupts (e.g., UART) to be serviced, minimizing
- * latency. Use this when protecting data shared between tasks.
- */
-#define NOSCHED_ENTER()          \
-    do {                         \
-        if (kcb->preemptive)     \
-            hal_timer_disable(); \
-    } while (0)
-#define NOSCHED_LEAVE()         \
-    do {                        \
-        if (kcb->preemptive)    \
-            hal_timer_enable(); \
-    } while (0)
-
 /* Core Kernel and Task Management API */
 
 /* Prints a fatal error message and halts the system. */
