@@ -117,48 +117,6 @@ extern kcb_t *kcb;
 #define TASK_CACHE_SIZE \
     4 /* Task lookup cache size for frequently accessed tasks */
 
-/* Critical Section Macros
- *
- * Two levels of protection are provided:
- * 1. CRITICAL_* macros disable ALL maskable interrupts globally
- * 2. NOSCHED_* macros disable ONLY the scheduler timer interrupt
- */
-
-/* Disable/enable ALL maskable interrupts globally.
- * Provides strongest protection against concurrency from both other tasks
- * and all ISRs. Use when modifying data shared with any ISR.
- * WARNING: Increases interrupt latency - use NOSCHED macros if protection
- * is only needed against task preemption.
- */
-#define CRITICAL_ENTER()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _di();           \
-    } while (0)
-
-#define CRITICAL_LEAVE()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _ei();           \
-    } while (0)
-
-/* Disable/enable ONLY the scheduler timer interrupt.
- * Lighter-weight critical section that prevents task preemption but allows
- * other hardware interrupts (e.g., UART) to be serviced, minimizing latency.
- * Use when protecting data shared between tasks.
- */
-#define NOSCHED_ENTER()          \
-    do {                         \
-        if (kcb->preemptive)     \
-            hal_timer_disable(); \
-    } while (0)
-
-#define NOSCHED_LEAVE()         \
-    do {                        \
-        if (kcb->preemptive)    \
-            hal_timer_enable(); \
-    } while (0)
-
 /* Core Kernel and Task Management API */
 
 /* System Control Functions */
