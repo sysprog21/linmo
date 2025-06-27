@@ -70,10 +70,6 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
         "csrw   mideleg, zero\n" /* No interrupt delegation to S-mode */
         "csrw   medeleg, zero\n" /* No exception delegation to S-mode */
 
-        /* Park secondary harts (cores). */
-        "csrr   t0, mhartid\n"
-        "bnez   t0, .Lpark_hart\n"
-
         /* Set the machine trap vector (mtvec) to point to our ISR. */
         "la     t0, _isr\n"
         "csrw   mtvec, t0\n"
@@ -87,14 +83,11 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
         "csrw   mie, t0\n"
 
         /* Jump to the C-level main function. */
+        "csrr   a0, mhartid\n"
         "call   main\n"
 
         /* If main() ever returns, it is a fatal error. */
         "call   hal_panic\n"
-
-        ".Lpark_hart:\n"
-        "wfi\n"
-        "j      .Lpark_hart\n"
 
         : /* no outputs */
         : "i"(MSTATUS_MPP_MACH), "i"(MIE_MEIE), "i"(STACK_SIZE_PER_HART)
