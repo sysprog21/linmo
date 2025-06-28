@@ -35,4 +35,8 @@ static const struct error_code error_desc[] = {
     {ERR_UNKNOWN, "unknown error"},
 };
 
+<<<<<<< HEAD
 const struct error_code *const perror = error_desc;
+=======
+const struct error_code * const perror = error_desc;
+>>>>>>> de976a5 (Constify error_desc and perror)

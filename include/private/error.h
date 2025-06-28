@@ -39,4 +39,8 @@ struct error_code {
     char *const desc;
 };
 
+<<<<<<< HEAD
 extern const struct error_code *const perror;
+=======
+extern const struct error_code * const perror;
+>>>>>>> de976a5 (Constify error_desc and perror)
