@@ -131,11 +131,14 @@ static inline uint64_t mtime_r(void)
 /* Safely read the 64-bit 'mtimecmp' register. */
 static inline uint64_t mtimecmp_r(void)
 {
-    uint32_t hi, lo;
+    uint32_t hi, lo, hartid;
+
+    hartid = read_csr(mhartid);
+
     do {
-        hi = MTIMECMP_H;
-        lo = MTIMECMP_L;
-    } while (hi != MTIMECMP_H);
+        hi = * (volatile uint32_t *) (CLINT_BASE + 0x4004u + 8 * hartid);
+        lo = * (volatile uint32_t *) (CLINT_BASE + 0x4000u + 8 * hartid);
+    } while (hi != *(volatile uint32_t *) (CLINT_BASE + 0x4004u + 8 * hartid));
     return CT64(hi, lo);
 }
 
@@ -152,10 +155,11 @@ static inline void mtimecmp_w(uint64_t val)
     /* Disable interrupts during the critical section to ensure atomicity */
     uint32_t old_mie = read_csr(mie);
     write_csr(mie, old_mie & ~MIE_MTIE);
+    uint32_t hartid = read_csr(mhartid);
 
-    MTIMECMP_L = 0xFFFFFFFF; /* Set to maximum to prevent spurious interrupt */
-    MTIMECMP_H = (uint32_t) (val >> 32); /* Set high word */
-    MTIMECMP_L = (uint32_t) val;         /* Set low word to final value */
+    * (volatile uint32_t *) (CLINT_BASE + 0x4000u + 8 * hartid) = 0xFFFFFFFF; /* Set to maximum to prevent spurious interrupt */
+    * (volatile uint32_t *) (CLINT_BASE + 0x4004u + 8 * hartid) = (uint32_t) (val >> 32); /* Set high word */
+    * (volatile uint32_t *) (CLINT_BASE + 0x4000u + 8 * hartid) = (uint32_t) val;         /* Set low word to final value */
 
     /* Re-enable timer interrupts if they were previously enabled */
     write_csr(mie, old_mie);
