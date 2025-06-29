@@ -1,0 +1,52 @@
+name: CI
+
+on:
+    push:
+        branches: [main, master]
+    pull_request:
+        branches: [main, master]
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Install dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential qemu-system-riscv32
+
+            - name: Download RISC-V GNU Toolchain
+              run: |
+                  wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.02.02/riscv32-elf-ubuntu-22.04-gcc-nightly-2024.02.02-nightly.tar.gz
+                  tar -xzf riscv32-elf-ubuntu-22.04-gcc-nightly-2024.02.02-nightly.tar.gz
+                  echo "$PWD/riscv/bin" >> $GITHUB_PATH
+
+            - name: Verify toolchain installation
+              run: |
+                  riscv32-unknown-elf-gcc --version
+                  qemu-system-riscv32 --version
+              env:
+                  CROSS_COMPILE: riscv32-unknown-elf-
+
+            - name: Build Linmo kernel
+              run: |
+                  make clean
+                  make
+              env:
+                  CROSS_COMPILE: riscv32-unknown-elf-
+
+            - name: Build hello example
+              run: |
+                  make hello
+              env:
+                  CROSS_COMPILE: riscv32-unknown-elf-
+
+            - name: Verify build artifacts
+              run: |
+                  ls -la build/
+                  file build/liblinmo.a
+                  file build/image.elf
