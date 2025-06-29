@@ -14,6 +14,8 @@
 extern uint32_t _gp, _stack, _end;
 extern uint32_t _sbss, _ebss;
 
+#define STACK_SIZE_PER_HART 524288
+
 /* C entry points */
 void main(void);
 void do_trap(uint32_t cause, uint32_t epc);
@@ -29,6 +31,12 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
         /* Initialize Global Pointer (gp) and Stack Pointer (sp). */
         "la     gp, _gp\n"
         "la     sp, _stack\n"
+        /* Set up stack for each hart */
+        "csrr   t0, mhartid\n"               /* t0 = hartid */
+        "la     t1, _stack_top\n"            /* t1 = base address of full stack region (top) */
+        "li     t2, %2\n"                    /* t2 = per-hart stack size */
+        "mul    t0, t0, t2\n"                /* t0 = hartid * STACK_SIZE_PER_HART */
+        "sub    sp, t1, t0\n"                /* sp = _stack_top - hartid * stack_size */
 
         /* Initialize Thread Pointer (tp). The ABI requires tp to point to
          * a 64-byte aligned memory region for thread-local storage. Here, we
@@ -89,7 +97,7 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
         "j      .Lpark_hart\n"
 
         : /* no outputs */
-        : "i"(MSTATUS_MPP_MACH), "i"(MIE_MEIE)
+        : "i"(MSTATUS_MPP_MACH), "i"(MIE_MEIE), "i"(STACK_SIZE_PER_HART)
         : "memory");
 }
 
