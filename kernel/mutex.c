@@ -47,10 +47,10 @@ static list_node_t *find_node_by_data(list_t *list, void *data)
  */
 static void mutex_block_atomic(list_t *waiters)
 {
-    if (!waiters || !kcb || !kcb->task_current || !kcb->task_current->data)
+    if (!waiters || !kcb || !get_task_current() || !get_task_current()->data)
         panic(ERR_SEM_OPERATION);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Add to waiters list */
     if (!list_pushback(waiters, self))
@@ -198,7 +198,7 @@ int32_t mo_mutex_timedlock(mutex_t *m, uint32_t ticks)
     }
 
     /* Must block with timeout */
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (!list_pushback(m->waiters, self)) {
         spin_unlock_irqrestore(&mutex_lock, mutex_flags);
         panic(ERR_SEM_OPERATION);
@@ -353,7 +353,7 @@ int32_t mo_cond_wait(cond_t *c, mutex_t *m)
 
     /* Atomically add to wait list and block */
     spin_lock_irqsave(&mutex_lock, &mutex_flags);
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (!list_pushback(c->waiters, self)) {
         spin_unlock_irqrestore(&mutex_lock, mutex_flags);
         panic(ERR_SEM_OPERATION);
@@ -399,7 +399,7 @@ int32_t mo_cond_timedwait(cond_t *c, mutex_t *m, uint32_t ticks)
 
     /* Atomically add to wait list */
     spin_lock_irqsave(&mutex_lock, &mutex_flags);
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (!list_pushback(c->waiters, self)) {
         spin_unlock_irqrestore(&mutex_lock, mutex_flags);
         panic(ERR_SEM_OPERATION);

@@ -56,10 +56,10 @@ int32_t main(int32_t hartid)
     mo_task_spawn(idle_task, DEFAULT_STACK_SIZE);
 
     /* Verify that the application created at least one task.
-     * If 'kcb->task_current' is still NULL, it means mo_task_spawn was never
+     * If 'get_task_current()' is still NULL, it means mo_task_spawn was never
      * successfully called.
      */
-    if (!kcb->task_current)
+    if (!get_task_current())
         panic(ERR_NO_TASKS);
 
     /* Save the kernel's context. This is a formality to establish a base
@@ -70,10 +70,11 @@ int32_t main(int32_t hartid)
     spin_lock(&finish_lock);
 
     /* Launch the first task.
-     * 'kcb->task_current' was set by the first call to mo_task_spawn.
+     * 'get_task_current()' was set by the first call to mo_task_spawn.
      * This function transfers control and does not return.
      */
-    tcb_t *first_task = kcb->task_current->data;
+
+    tcb_t *first_task = get_task_current()->data;
     if (!first_task)
         panic(ERR_NO_TASKS);
 

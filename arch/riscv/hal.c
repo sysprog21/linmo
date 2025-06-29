@@ -325,7 +325,7 @@ void hal_timer_disable(void)
  */
 void hal_interrupt_tick(void)
 {
-    tcb_t *task = kcb->task_current->data;
+    tcb_t *task = get_task_current(kcb)->data;
     if (unlikely(!task))
         hal_panic(); /* Fatal error - invalid task state */
 

@@ -23,7 +23,7 @@ void _timer_tick_handler(void);
  */
 static kcb_t kernel_state = {
     .tasks = NULL,
-    .task_current = NULL,
+    .task_current = {},
     .rt_sched = noop_rtsched,
     .timer_list = NULL, /* Managed by timer.c, but stored here. */
     .next_tid = 1,      /* Start from 1 to avoid confusion with invalid ID 0 */
@@ -85,10 +85,10 @@ static void task_stack_check(void)
     if (!should_check)
         return;
 
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         panic(ERR_STACK_CHECK);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (unlikely(!is_valid_task(self)))
         panic(ERR_STACK_CHECK);
 
@@ -205,7 +205,7 @@ void _yield(void) __attribute__((weak, alias("yield")));
 /* Scheduler with hint-based ready task search */
 static list_node_t *find_next_ready_task(void)
 {
-    if (unlikely(!kcb->task_current))
+    if (unlikely(!get_task_current()))
         return NULL;
 
     list_node_t *node;
@@ -225,7 +225,7 @@ static list_node_t *find_next_ready_task(void)
         }
     }
 
-    node = kcb->task_current;
+    node = get_task_current();
     while (itcnt++ < SCHED_IMAX) {
         node = list_cnext(kcb->tasks, node);
         if (unlikely(!node || !node->data))
@@ -258,11 +258,11 @@ static list_node_t *find_next_ready_task(void)
 /* Scheduler with reduced overhead */
 static uint16_t schedule_next_task(void)
 {
-    if (unlikely(!kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!get_task_current() || !get_task_current()->data))
         panic(ERR_NO_TASKS);
 
     /* Mark the previously running task as ready for the next cycle. */
-    tcb_t *current_task = kcb->task_current->data;
+    tcb_t *current_task = get_task_current()->data;
     if (current_task->state == TASK_RUNNING)
         current_task->state = TASK_READY;
 
@@ -273,7 +273,7 @@ static uint16_t schedule_next_task(void)
     }
 
     /* Update scheduler state */
-    kcb->task_current = next_node;
+    set_task_current(next_node);
     tcb_t *next_task = next_node->data;
     next_task->state = TASK_RUNNING;
 
@@ -297,11 +297,11 @@ void dispatcher(void)
 /* Top-level context-switch for preemptive scheduling. */
 void dispatch(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         panic(ERR_NO_TASKS);
 
     /* Return from longjmp: context is restored, continue task execution. */
-    if (setjmp(((tcb_t *) kcb->task_current->data)->context) != 0)
+    if (setjmp(((tcb_t *) get_task_current()->data)->context) != 0)
         return;
 
     task_stack_check();
@@ -313,16 +313,16 @@ void dispatch(void)
     }
 
     hal_interrupt_tick();
-    longjmp(((tcb_t *) kcb->task_current->data)->context, 1);
+    longjmp(((tcb_t *) get_task_current()->data)->context, 1);
 }
 
 /* Cooperative context switch */
 void yield(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         return;
 
-    if (setjmp(((tcb_t *) kcb->task_current->data)->context) != 0)
+    if (setjmp(((tcb_t *) get_task_current()->data)->context) != 0)
         return;
 
     task_stack_check();
@@ -332,7 +332,7 @@ void yield(void)
         list_foreach(kcb->tasks, delay_update, NULL);
 
     schedule_next_task();
-    longjmp(((tcb_t *) kcb->task_current->data)->context, 1);
+    longjmp(((tcb_t *) get_task_current()->data)->context, 1);
 }
 
 /* Stack initialization with minimal overhead */
@@ -411,8 +411,8 @@ int32_t mo_task_spawn(void *task_entry, uint16_t stack_size_req)
     tcb->id = kcb->next_tid++;
     kcb->task_count++;
 
-    if (!kcb->task_current)
-        kcb->task_current = node;
+    if (!get_task_current())
+        set_task_current(node);
 
     spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
 
@@ -483,12 +483,12 @@ void mo_task_delay(uint16_t ticks)
         return;
 
     spin_lock_irqsave(&kcb->kcb_lock, &task_flags);
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data)) {
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data)) {
         spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
         return;
     }
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     self->delay = ticks;
     self->state = TASK_BLOCKED;
     spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
@@ -516,7 +516,7 @@ int32_t mo_task_suspend(uint16_t id)
     }
 
     task->state = TASK_SUSPENDED;
-    bool is_current = (kcb->task_current == node);
+    bool is_current = (get_task_current() == node);
 
     /* Clear ready hint if suspending that task */
     if (kcb->last_ready_hint == node)
@@ -603,9 +603,9 @@ int32_t mo_task_rt_priority(uint16_t id, void *priority)
 
 uint16_t mo_task_id(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         return 0;
-    return ((tcb_t *) kcb->task_current->data)->id;
+    return ((tcb_t *) get_task_current()->data)->id;
 }
 
 int32_t mo_task_idref(void *task_entry)
@@ -647,11 +647,11 @@ uint64_t mo_uptime(void)
 
 void _sched_block(queue_t *wait_q)
 {
-    if (unlikely(!wait_q || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!wait_q || !kcb || !get_task_current() ||
+                 !get_task_current()->data))
         panic(ERR_SEM_OPERATION);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     if (queue_enqueue(wait_q, self) != 0) {
         panic(ERR_SEM_OPERATION);
