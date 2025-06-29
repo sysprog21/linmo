@@ -289,7 +289,11 @@ static int32_t noop_rtsched(void)
 /* The main entry point from the system tick interrupt. */
 void dispatcher(void)
 {
+    uint32_t flag = 0;
+
+    spin_lock_irqsave(&kcb->kcb_lock, &flag);
     kcb->ticks++;
+    spin_unlock_irqrestore(&kcb->kcb_lock, flag);
     _timer_tick_handler();
     _dispatch();
 }
