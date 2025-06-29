@@ -5,6 +5,12 @@
 
 #include "private/error.h"
 
+static void idle_task(void)
+{
+    while (1)
+        mo_task_wfi();
+}
+
 static volatile bool finish = false;
 static spinlock_t finish_lock = SPINLOCK_INITIALIZER;
 
@@ -46,6 +52,8 @@ int32_t main(int32_t hartid)
         spin_unlock(&finish_lock);
     }
     spin_unlock(&finish_lock);
+
+    mo_task_spawn(idle_task, DEFAULT_STACK_SIZE);
 
     /* Verify that the application created at least one task.
      * If 'kcb->task_current' is still NULL, it means mo_task_spawn was never
