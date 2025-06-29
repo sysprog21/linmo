@@ -16,10 +16,10 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -DUSART_BAUD=$(SERIAL_BAUDRATE) \
            -DF_TIMER=$(F_TICK)
 
-ASFLAGS = -march=rv32imzicsr -mabi=ilp32
+ASFLAGS = -march=rv32imzaicsr -mabi=ilp32
 CFLAGS += -Wall -Wextra -Wshadow -Wno-unused-parameter -Werror
 CFLAGS += -O2 -std=gnu99
-CFLAGS += -march=rv32imzicsr -mabi=ilp32
+CFLAGS += -march=rv32imazicsr -mabi=ilp32
 CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
 CFLAGS += $(INC_DIRS) $(DEFINES) -fdata-sections -ffunction-sections
 ARFLAGS = r
@@ -48,4 +48,4 @@ $(BUILD_KERNEL_DIR)/%.o: $(ARCH_DIR)/%.c | $(BUILD_DIR)
 
 run:
 	@$(call notice, Ready to launch Linmo kernel + application.)
-	$(Q)qemu-system-riscv32 -machine virt -nographic -bios none -kernel $(BUILD_DIR)/image.elf -nographic
+	$(Q)qemu-system-riscv32 -smp 4 -machine virt -nographic -bios none -kernel $(BUILD_DIR)/image.elf -nographic

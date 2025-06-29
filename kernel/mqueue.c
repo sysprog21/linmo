@@ -6,7 +6,12 @@
 #include <sys/mqueue.h>
 #include <sys/task.h>
 
+#include <spinlock.h>
+
 #include "private/error.h"
+
+static spinlock_t queue_lock = SPINLOCK_INITIALIZER;
+static uint32_t queue_flags = 0;
 
 mq_t *mo_mq_create(uint16_t max_items)
 {
@@ -24,17 +29,17 @@ mq_t *mo_mq_create(uint16_t max_items)
 
 int32_t mo_mq_destroy(mq_t *mq)
 {
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&queue_lock, &queue_flags);
 
     if (queue_count(mq->q) != 0) { /* refuse to destroy non-empty q */
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&queue_lock, queue_flags);
         return ERR_MQ_NOTEMPTY;
     }
 
     queue_destroy(mq->q);
     free(mq);
 
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&queue_lock, queue_flags);
     return ERR_OK;
 }
 
@@ -42,9 +47,9 @@ int32_t mo_mq_enqueue(mq_t *mq, message_t *msg)
 {
     int32_t rc;
 
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&queue_lock, &queue_flags);
     rc = queue_enqueue(mq->q, msg);
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&queue_lock, queue_flags);
 
     return rc; /* 0 on success, −1 on full */
 }
@@ -54,9 +59,9 @@ message_t *mo_mq_dequeue(mq_t *mq)
 {
     message_t *msg;
 
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&queue_lock, &queue_flags);
     msg = queue_dequeue(mq->q);
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&queue_lock, queue_flags);
 
     return msg; /* NULL when queue is empty */
 }
@@ -66,9 +71,9 @@ message_t *mo_mq_peek(mq_t *mq)
 {
     message_t *msg;
 
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&queue_lock, &queue_flags);
     msg = queue_peek(mq->q);
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&queue_lock, queue_flags);
 
     return msg; /* NULL when queue is empty */
 }
