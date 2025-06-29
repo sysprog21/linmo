@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hal.h>
+#include <spinlock.h>
 #include <lib/list.h>
 #include <lib/queue.h>
 
@@ -87,6 +88,8 @@ typedef struct {
     list_t *timer_list; /* List of active software timers. */
     /* Global system tick counter, incremented by the timer ISR. */
     volatile uint32_t ticks;
+
+    spinlock_t kcb_lock;
 } kcb_t;
 
 /* Global pointer to the singleton Kernel Control Block. */
