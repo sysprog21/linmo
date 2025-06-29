@@ -85,6 +85,8 @@ typedef struct tcb {
     void *rt_prio; /* Opaque pointer for custom real-time scheduler hook */
 } tcb_t;
 
+#define MAX_HARTS 8
+
 /* Kernel Control Block (KCB)
  *
  * Singleton structure holding global kernel state, including task lists,
@@ -93,7 +95,7 @@ typedef struct tcb {
 typedef struct {
     /* Task Management */
     list_t *tasks; /* Master list of all tasks (nodes contain tcb_t) */
-    list_node_t *task_current; /* Node of currently running task */
+    list_node_t *task_current[MAX_HARTS]; /* Node of currently running task */
     jmp_buf context; /* Saved context of main kernel thread before scheduling */
     uint16_t next_tid;   /* Monotonically increasing ID for next new task */
     uint16_t task_count; /* Cached count of active tasks for quick access */
@@ -122,6 +124,20 @@ extern kcb_t *kcb;
     4 /* Task lookup cache size for frequently accessed tasks */
 
 /* Core Kernel and Task Management API */
+
+static inline list_node_t *get_task_current()
+{
+    const uint32_t mhartid = read_csr(mhartid);
+
+    return kcb->task_current[mhartid];
+}
+
+static inline void set_task_current(list_node_t *task)
+{
+    const uint32_t mhartid = read_csr(mhartid);
+
+    kcb->task_current[mhartid] = task;
+}
 
 /* System Control Functions */
 

@@ -49,11 +49,11 @@ static inline void cond_invalidate(cond_t *c)
  */
 static bool remove_self_from_waiters(list_t *waiters)
 {
-    if (unlikely(!waiters || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!waiters || !kcb || !get_task_current() ||
+                 !get_task_current()->data))
         return false;
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Search for and remove self from waiters list */
     list_node_t *curr = waiters->head->next;
@@ -71,11 +71,11 @@ static bool remove_self_from_waiters(list_t *waiters)
 /* Atomic block operation with enhanced error checking */
 static void mutex_block_atomic(list_t *waiters)
 {
-    if (unlikely(!waiters || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!waiters || !kcb || !get_task_current() ||
+                 !get_task_current()->data))
         panic(ERR_SEM_OPERATION);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Add to waiters list */
     if (unlikely(!list_pushback(waiters, self)))
@@ -223,7 +223,7 @@ int32_t mo_mutex_timedlock(mutex_t *m, uint32_t ticks)
     }
 
     /* Slow path: must block with timeout using delay mechanism */
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (unlikely(!list_pushback(m->waiters, self))) {
         spin_unlock_irqrestore(&mutex_lock, mutex_flags);
         panic(ERR_SEM_OPERATION);
@@ -384,7 +384,7 @@ int32_t mo_cond_wait(cond_t *c, mutex_t *m)
     if (unlikely(!mo_mutex_owned_by_current(m)))
         return ERR_NOT_OWNER;
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Atomically add to wait list */
     spin_lock_irqsave(&mutex_lock, &mutex_flags);
@@ -426,7 +426,7 @@ int32_t mo_cond_timedwait(cond_t *c, mutex_t *m, uint32_t ticks)
         return ERR_TIMEOUT;
     }
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Atomically add to wait list with timeout */
     spin_lock_irqsave(&mutex_lock, &mutex_flags);

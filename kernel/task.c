@@ -19,7 +19,7 @@ void _timer_tick_handler(void);
 /* Kernel-wide control block (KCB) */
 static kcb_t kernel_state = {
     .tasks = NULL,
-    .task_current = NULL,
+    .task_current = {},
     .rt_sched = noop_rtsched,
     .timer_list = NULL, /* Managed by timer.c, but stored here. */
     .next_tid = 1,      /* Start from 1 to avoid confusion with invalid ID 0 */
@@ -145,10 +145,10 @@ static void task_stack_check(void)
     if (!should_check)
         return;
 
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         panic(ERR_STACK_CHECK);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
     if (unlikely(!is_valid_task(self)))
         panic(ERR_STACK_CHECK);
 
@@ -366,10 +366,10 @@ void sched_dequeue_task(tcb_t *task)
 /* Handle time slice expiration for current task */
 void sched_tick_current_task(void)
 {
-    if (unlikely(!kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!get_task_current() || !get_task_current()->data))
         return;
 
-    tcb_t *current_task = kcb->task_current->data;
+    tcb_t *current_task = get_task_current()->data;
 
     /* Decrement time slice */
     if (current_task->time_slice > 0)
@@ -414,17 +414,17 @@ void sched_wakeup_task(tcb_t *task)
  */
 uint16_t sched_select_next_task(void)
 {
-    if (unlikely(!kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!get_task_current() || !get_task_current()->data))
         panic(ERR_NO_TASKS);
 
-    tcb_t *current_task = kcb->task_current->data;
+    tcb_t *current_task = get_task_current()->data;
 
     /* Mark current task as ready if it was running */
     if (current_task->state == TASK_RUNNING)
         current_task->state = TASK_READY;
 
     /* Round-robin search: find next ready task in the master task list */
-    list_node_t *start_node = kcb->task_current;
+    list_node_t *start_node = get_task_current();
     list_node_t *node = start_node;
     int iterations = 0; /* Safety counter to prevent infinite loops */
 
@@ -441,7 +441,7 @@ uint16_t sched_select_next_task(void)
             continue;
 
         /* Found a ready task */
-        kcb->task_current = node;
+        set_task_current(node);
         task->state = TASK_RUNNING;
         task->time_slice = get_priority_timeslice(task->prio_level);
 
@@ -478,14 +478,14 @@ void dispatcher(void)
 /* Top-level context-switch for preemptive scheduling. */
 void dispatch(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         panic(ERR_NO_TASKS);
 
     /* Save current context using dedicated HAL routine that handles both
      * execution context and processor state for context switching.
      * Returns immediately if this is the restore path.
      */
-    if (hal_context_save(((tcb_t *) kcb->task_current->data)->context) != 0)
+    if (hal_context_save(((tcb_t *) get_task_current()->data)->context) != 0)
         return;
 
 #if CONFIG_STACK_PROTECTION
@@ -505,20 +505,20 @@ void dispatch(void)
     hal_interrupt_tick();
 
     /* Restore next task context */
-    hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
+    hal_context_restore(((tcb_t *) get_task_current()->data)->context, 1);
 }
 
 /* Cooperative context switch */
 void yield(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         return;
 
     /* Process deferred timer work during yield */
     process_deferred_timer_work();
 
     /* HAL context switching is used for preemptive scheduling. */
-    if (hal_context_save(((tcb_t *) kcb->task_current->data)->context) != 0)
+    if (hal_context_save(((tcb_t *) get_task_current()->data)->context) != 0)
         return;
 
 #if CONFIG_STACK_PROTECTION
@@ -530,7 +530,7 @@ void yield(void)
         list_foreach(kcb->tasks, delay_update, NULL);
 
     sched_select_next_task(); /* Use O(1) priority scheduler */
-    hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
+    hal_context_restore(((tcb_t *) get_task_current()->data)->context, 1);
 }
 
 /* Stack initialization with minimal overhead */
@@ -618,8 +618,8 @@ int32_t mo_task_spawn(void *task_entry, uint16_t stack_size_req)
     tcb->id = kcb->next_tid++;
     kcb->task_count++; /* Cached count of active tasks for quick access */
 
-    if (!kcb->task_current)
-        kcb->task_current = node;
+    if (!get_task_current())
+        set_task_current(node);
 
     spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
 
@@ -691,12 +691,12 @@ void mo_task_delay(uint16_t ticks)
         return;
 
     spin_lock_irqsave(&kcb->kcb_lock, &task_flags);
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data)) {
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data)) {
         spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
         return;
     }
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     /* Set delay and blocked state - scheduler will skip blocked tasks */
     self->delay = ticks;
@@ -726,7 +726,7 @@ int32_t mo_task_suspend(uint16_t id)
     }
 
     task->state = TASK_SUSPENDED;
-    bool is_current = (kcb->task_current == node);
+    bool is_current = (get_task_current() == node);
 
     spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
 
@@ -813,9 +813,9 @@ int32_t mo_task_rt_priority(uint16_t id, void *priority)
 
 uint16_t mo_task_id(void)
 {
-    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+    if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         return 0;
-    return ((tcb_t *) kcb->task_current->data)->id;
+    return ((tcb_t *) get_task_current()->data)->id;
 }
 
 int32_t mo_task_idref(void *task_entry)
@@ -860,14 +860,14 @@ uint64_t mo_uptime(void)
 
 void _sched_block(queue_t *wait_q)
 {
-    if (unlikely(!wait_q || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!wait_q || !kcb || !get_task_current() ||
+                 !get_task_current()->data))
         panic(ERR_SEM_OPERATION);
 
     /* Process deferred timer work before blocking */
     process_deferred_timer_work();
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = get_task_current()->data;
 
     if (queue_enqueue(wait_q, self) != 0)
         panic(ERR_SEM_OPERATION);
