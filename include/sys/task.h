@@ -13,6 +13,7 @@
  */
 
 #include <hal.h>
+#include <spinlock.h>
 #include <lib/list.h>
 #include <lib/queue.h>
 
@@ -104,6 +105,9 @@ typedef struct {
     /* Timer Management */
     list_t *timer_list;      /* List of active software timers */
     volatile uint32_t ticks; /* Global system tick, incremented by timer */
+    /* Timers */
+
+    spinlock_t kcb_lock;
 } kcb_t;
 
 /* Global pointer to the singleton Kernel Control Block */
