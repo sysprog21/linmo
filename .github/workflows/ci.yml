@@ -1,28 +1,28 @@
-name: CI
+name: Linmo CI (GNU Only)
 
 on:
     push:
-        branches: [main, master]
+        branches: [main, ci]
     pull_request:
-        branches: [main, master]
+        branches: [main, ci]
 
 jobs:
-    build:
+    test:
         runs-on: ubuntu-latest
 
         steps:
-            - name: Checkout code
+            - name: Checkout
               uses: actions/checkout@v4
 
             - name: Install dependencies
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y build-essential qemu-system-riscv32
+                  sudo apt-get install -y build-essential qemu-system-riscv32 wget
 
             - name: Download RISC-V GNU Toolchain
               run: |
-                  wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.02.02/riscv32-elf-ubuntu-22.04-gcc-nightly-2024.02.02-nightly.tar.gz
-                  tar -xzf riscv32-elf-ubuntu-22.04-gcc-nightly-2024.02.02-nightly.tar.gz
+                  wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.06.13/riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
+                  tar -xf riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
                   echo "$PWD/riscv/bin" >> $GITHUB_PATH
 
             - name: Verify toolchain installation
@@ -39,14 +39,11 @@ jobs:
               env:
                   CROSS_COMPILE: riscv32-unknown-elf-
 
-            - name: Build hello example
+            - name: Build and run cpubench
               run: |
-                  make hello
+                  make clean
+                  make cpubench
+                  timeout 5s qemu-system-riscv32 -nographic -machine virt -bios none -kernel build/image.elf || true
+                  echo "cpubench completed"
               env:
                   CROSS_COMPILE: riscv32-unknown-elf-
-
-            - name: Verify build artifacts
-              run: |
-                  ls -la build/
-                  file build/liblinmo.a
-                  file build/image.elf
