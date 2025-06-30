@@ -40,7 +40,11 @@ struct error_code {
 };
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 extern const struct error_code *const perror;
 =======
 extern const struct error_code * const perror;
 >>>>>>> de976a5 (Constify error_desc and perror)
+=======
+extern const struct error_code *const perror;
+>>>>>>> 888f673 (Ensure consistent indention)

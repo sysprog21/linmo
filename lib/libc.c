@@ -463,7 +463,7 @@ int32_t strtol(const char *s, char **end, int32_t base)
 }
 
 /* Base-10 string conversion without division or multiplication */
-static char* __str_base10(uint32_t value, char* buffer, int* length)
+static char *__str_base10(uint32_t value, char *buffer, int *length)
 {
     if (value == 0) {
         buffer[0] = '0';
@@ -471,7 +471,8 @@ static char* __str_base10(uint32_t value, char* buffer, int* length)
         return buffer;
     }
 
-    char temp[12]; /* Max digits for 32-bit: 4,294,967,295 (10 digits) + sign + null */
+    /* Max digits for 32-bit: 4,294,967,295 (10 digits) + sign + null */
+    char tmp[12];
     int pos = 0;
 
     while (value > 0) {
@@ -487,29 +488,29 @@ static char* __str_base10(uint32_t value, char* buffer, int* length)
         q += t;
         r -= (((t << 2) + t) << 1);
 
-        temp[pos++] = '0' + r;
+        tmp[pos++] = '0' + r;
         value = q;
     }
 
     /* Reverse digits into output buffer */
     *length = pos;
     for (int i = 0; i < pos; i++) {
-        buffer[i] = temp[pos - 1 - i];
+        buffer[i] = tmp[pos - 1 - i];
     }
 
     return buffer;
 }
 
 /* Handle signed integers */
-static char* __str_base10_signed(int32_t value, char* buffer, int* length) {
+static char *__str_base10_signed(int32_t value, char *buffer, int *length)
+{
     if (value < 0) {
         buffer[0] = '-';
-        __str_base10((uint32_t)(-value), buffer + 1, length);
+        __str_base10((uint32_t) (-value), buffer + 1, length);
         (*length)++;
         return buffer;
-    } else {
-        return __str_base10((uint32_t)value, buffer, length);
     }
+    return __str_base10((uint32_t) value, buffer, length);
 }
 
 /* Converts string @s to an integer. */
