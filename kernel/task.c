@@ -515,6 +515,8 @@ void dispatch(void)
 /* Cooperative context switch */
 void yield(void)
 {
+    uint32_t flag = 0;
+
     if (unlikely(!kcb || !get_task_current() || !get_task_current()->data))
         return;
 
@@ -530,6 +532,8 @@ void yield(void)
 #endif
 
     /* In cooperative mode, delays are only processed on an explicit yield. */
+    spin_lock_irqsave(&kcb->kcb_lock, &flag);
+
     if (!kcb->preemptive)
         list_foreach(kcb->tasks, delay_update, NULL);
 
@@ -824,10 +828,13 @@ uint16_t mo_task_id(void)
 
 int32_t mo_task_idref(void *task_entry)
 {
-    if (!task_entry || !kcb->tasks)
-        return ERR_TASK_NOT_FOUND;
-
     spin_lock_irqsave(&kcb->kcb_lock, &task_flags);
+
+    if (!task_entry || !kcb->tasks) {
+        spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
+        return ERR_TASK_NOT_FOUND;
+    }
+
     list_node_t *node = list_foreach(kcb->tasks, refcmp, task_entry);
     spin_unlock_irqrestore(&kcb->kcb_lock, task_flags);
 
@@ -838,23 +845,46 @@ void mo_task_wfi(void)
 {
     /* Process deferred timer work before waiting */
     process_deferred_timer_work();
+    uint32_t flag = 0;
 
     if (!kcb->preemptive)
         return;
 
+    spin_lock_irqsave(&kcb->kcb_lock, &flag);
     volatile uint32_t current_ticks = kcb->ticks;
-    while (current_ticks == kcb->ticks)
+    spin_unlock_irqrestore(&kcb->kcb_lock, flag);
+
+    while (1) {
+        spin_lock_irqsave(&kcb->kcb_lock, &flag);
+        if (current_ticks != kcb->ticks) {
+            spin_unlock_irqrestore(&kcb->kcb_lock, flag);
+            break;
+        }
+        spin_unlock_irqrestore(&kcb->kcb_lock, flag);
         hal_cpu_idle();
+    }
 }
 
 uint16_t mo_task_count(void)
 {
-    return kcb->task_count;
+    uint32_t task_count;
+    uint32_t flag;
+
+    spin_lock_irqsave(&kcb->kcb_lock, &flag);
+    task_count = kcb->task_count;
+    spin_unlock_irqrestore(&kcb->kcb_lock, flag);
+    return task_count;
 }
 
 uint32_t mo_ticks(void)
 {
-    return kcb->ticks;
+    uint32_t ticks;
+    uint32_t flag;
+
+    spin_lock_irqsave(&kcb->kcb_lock, &flag);
+    ticks = kcb->ticks;
+    spin_unlock_irqrestore(&kcb->kcb_lock, flag);
+    return ticks;
 }
 
 uint64_t mo_uptime(void)
