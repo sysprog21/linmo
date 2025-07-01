@@ -8,6 +8,7 @@
  */
 
 #include <hal.h>
+#include <spinlock.h>
 #include <lib/list.h>
 #include <lib/malloc.h>
 #include <sys/task.h>
@@ -30,6 +31,9 @@ static struct {
     timer_t *timer;
 } timer_cache[4];
 static uint8_t timer_cache_index = 0;
+
+static spinlock_t timer_lock = SPINLOCK_INITIALIZER;
+static uint32_t timer_flags = 0;
 
 /* Get a node from the pool, fall back to malloc if pool is empty */
 static list_node_t *get_timer_node(void)
@@ -82,9 +86,9 @@ static int32_t timer_subsystem_init(void)
     if (timer_initialized)
         return ERR_OK;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&timer_lock, &timer_flags);
     if (timer_initialized) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_OK;
     }
 
@@ -95,7 +99,7 @@ static int32_t timer_subsystem_init(void)
         free(all_timers_list);
         free(kcb->timer_list);
         kcb->timer_list = NULL;
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_FAIL;
     }
 
@@ -106,7 +110,7 @@ static int32_t timer_subsystem_init(void)
     }
 
     timer_initialized = true;
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&timer_lock, timer_flags);
     return ERR_OK;
 }
 
@@ -284,7 +288,7 @@ int32_t mo_timer_create(void *(*callback)(void *arg),
     if (!t)
         return ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&timer_lock, &timer_flags);
 
     /* Initialize timer */
     t->id = next_id++;
@@ -296,7 +300,7 @@ int32_t mo_timer_create(void *(*callback)(void *arg),
 
     /* Insert into sorted all_timers_list */
     if (timer_insert_sorted_by_id(t) != ERR_OK) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         free(t);
         return ERR_FAIL;
     }
@@ -304,7 +308,7 @@ int32_t mo_timer_create(void *(*callback)(void *arg),
     /* Add to cache */
     cache_timer(t->id, t);
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&timer_lock, timer_flags);
     return t->id;
 }
 
@@ -313,11 +317,11 @@ int32_t mo_timer_destroy(uint16_t id)
     if (!timer_initialized)
         return ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&timer_lock, &timer_flags);
 
     list_node_t *node = timer_find_node_by_id(id);
     if (!node) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_FAIL;
     }
 
@@ -340,7 +344,7 @@ int32_t mo_timer_destroy(uint16_t id)
     free(t);
     return_timer_node(node);
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&timer_lock, timer_flags);
     return ERR_OK;
 }
 
@@ -351,11 +355,11 @@ int32_t mo_timer_start(uint16_t id, uint8_t mode)
     if (!timer_initialized)
         return ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&timer_lock, &timer_flags);
 
     timer_t *t = timer_find_by_id_fast(id);
     if (!t) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_FAIL;
     }
 
@@ -369,11 +373,11 @@ int32_t mo_timer_start(uint16_t id, uint8_t mode)
 
     if (timer_sorted_insert(t) != ERR_OK) {
         t->mode = TIMER_DISABLED;
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_FAIL;
     }
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&timer_lock, timer_flags);
     return ERR_OK;
 }
 
@@ -382,17 +386,17 @@ int32_t mo_timer_cancel(uint16_t id)
     if (!timer_initialized)
         return ERR_FAIL;
 
-    NOSCHED_ENTER();
+    spin_lock_irqsave(&timer_lock, &timer_flags);
 
     timer_t *t = timer_find_by_id_fast(id);
     if (!t || t->mode == TIMER_DISABLED) {
-        NOSCHED_LEAVE();
+        spin_unlock_irqrestore(&timer_lock, timer_flags);
         return ERR_FAIL;
     }
 
     timer_remove_item_by_data(kcb->timer_list, t);
     t->mode = TIMER_DISABLED;
 
-    NOSCHED_LEAVE();
+    spin_unlock_irqrestore(&timer_lock, timer_flags);
     return ERR_OK;
 }

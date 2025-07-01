@@ -1,5 +1,6 @@
 #include <lib/libc.h>
 #include <stdarg.h>
+#include <spinlock.h>
 
 #include "private/stdio.h"
 #include "private/utils.h"
@@ -897,15 +898,20 @@ static int vsprintf(char **buf, const char *fmt, va_list args)
     return len;
 }
 
+
+static spinlock_t printf_lock = SPINLOCK_INITIALIZER;
+static uint32_t printf_flags = 0;
 /* Formatted output to stdout. */
 int32_t printf(const char *fmt, ...)
 {
     va_list args;
     int32_t v;
 
+    spin_lock_irqsave(&printf_lock, &printf_flags);
     va_start(args, fmt);
     v = vsprintf(0, fmt, args);
     va_end(args);
+    spin_unlock_irqrestore(&printf_lock, printf_flags);
     return v;
 }
 
