@@ -68,3 +68,19 @@ jobs:
               repo: context.repo.repo,
               body: `## Linmo QEMU App Test Result (${toolchain} Toolchain)\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
             });
+
+  # Optional: Create a summary job that depends on all matrix jobs
+  test-summary:
+    runs-on: ubuntu-24.04
+    needs: matrix-tests
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
+            echo "✅ All toolchain tests passed!"
+          else
+            echo "❌ Some toolchain tests failed"
+            exit 1
+          fi
