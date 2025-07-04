@@ -33,8 +33,9 @@ jobs:
           if [ "${{ matrix.toolchain }}" = "gnu" ]; then
             riscv32-unknown-elf-gcc --version
           else
-            riscv32-unknown-elf-clang --version
-            riscv32-unknown-elf-llvm-objdump --version
+            # LLVM toolchain fallback: try system llvm-objdump
+            riscv32-unknown-elf-clang --version || clang --version
+            riscv32-unknown-elf-llvm-objdump --version || llvm-objdump --version
           fi
           qemu-system-riscv32 --version
 

@@ -4,10 +4,13 @@ set -e
 # Default to GNU if no toolchain specified
 TOOLCHAIN_TYPE=${1:-gnu}
 
+TOOLCHAIN_REPO=https://github.com/riscv-collab/riscv-gnu-toolchain
+TOOLCHAIN_VERSION=2025.07.03
+
 setup_gnu_toolchain() {
     echo "[+] Setting up GNU RISC-V toolchain..."
 
-    local URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.07.03/riscv32-elf-ubuntu-24.04-gcc-nightly-2025.07.03-nightly.tar.xz"
+    local URL="${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_VERSION}/riscv32-elf-ubuntu-24.04-gcc-nightly-${TOOLCHAIN_VERSION}-nightly.tar.xz"
 
     echo "[+] Downloading RISC-V GNU toolchain..."
     wget -q "$URL"
@@ -25,7 +28,7 @@ setup_llvm_toolchain() {
     echo "[+] Setting up LLVM RISC-V toolchain..."
 
     # upstream URL for LLVM toolchain
-    local URL="https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.07.03/riscv32-elf-ubuntu-24.04-llvm-nightly-2025.07.03-nightly.tar.xz"
+    local URL="${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_VERSION}/riscv32-elf-ubuntu-24.04-llvm-nightly-${TOOLCHAIN_VERSION}-nightly.tar.xz"
 
     echo "[+] Downloading RISC-V LLVM toolchain..."
     wget -q "$URL"
