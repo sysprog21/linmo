@@ -40,6 +40,7 @@ setup_llvm_toolchain() {
     # Set cross-compile prefix for LLVM
     echo "CROSS_COMPILE=riscv32-unknown-elf-" >> "$GITHUB_ENV"
     echo "TOOLCHAIN_TYPE=llvm" >> "$GITHUB_ENV"
+    echo "AR=llvm-ar" >> "$GITHUB_ENV"
 }
 
 case "$TOOLCHAIN_TYPE" in
