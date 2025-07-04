@@ -1,49 +1,71 @@
 name: Linmo CI (GNU Only)
 
 on:
-    push:
-        branches: [main, ci]
-    pull_request:
-        branches: [main, ci]
+  push:
+    branches: [main, ci]
+  pull_request:
+    branches: [main, ci]
 
 jobs:
-    test:
-        runs-on: ubuntu-latest
+  test:
+    runs-on: ubuntu-24.04
 
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Install dependencies
-              run: |
-                  sudo apt-get update
-                  sudo apt-get install -y build-essential qemu-system-riscv32 wget
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential qemu-system-riscv32 wget
 
-            - name: Download RISC-V GNU Toolchain
-              run: |
-                  wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.06.13/riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
-                  tar -xf riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
-                  echo "$PWD/riscv/bin" >> $GITHUB_PATH
+      - name: Download RISC-V GNU Toolchain
+        run: |
+          wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.06.13/riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
+          tar -xf riscv32-elf-ubuntu-22.04-gcc-nightly-2025.06.13-nightly.tar.xz
+          echo "$PWD/riscv/bin" >> $GITHUB_PATH
 
-            - name: Verify toolchain installation
-              run: |
-                  riscv32-unknown-elf-gcc --version
-                  qemu-system-riscv32 --version
-              env:
-                  CROSS_COMPILE: riscv32-unknown-elf-
+      - name: Verify toolchain installation
+        run: |
+          riscv32-unknown-elf-gcc --version
+          qemu-system-riscv32 --version
+        env:
+          CROSS_COMPILE: riscv32-unknown-elf-
 
-            - name: Build Linmo kernel
-              run: |
-                  make clean
-                  make
-              env:
-                  CROSS_COMPILE: riscv32-unknown-elf-
+      - name: Build Linmo kernel
+        run: |
+          make clean
+          make
+        env:
+          CROSS_COMPILE: riscv32-unknown-elf-
 
-            - name: Build and run cpubench
-              run: |
-                  make clean
-                  make cpubench
-                  timeout 5s qemu-system-riscv32 -nographic -machine virt -bios none -kernel build/image.elf || true
-                  echo "cpubench completed"
-              env:
-                  CROSS_COMPILE: riscv32-unknown-elf-
+      - name: Build and run cpubench
+        run: |
+          make clean
+          make cpubench
+          set +e
+          timeout 5s qemu-system-riscv32 -nographic -machine virt -bios none -kernel build/image.elf | tee qemu_output.txt
+          echo "cpubench completed" >> qemu_output.txt
+          set -e
+        env:
+          CROSS_COMPILE: riscv32-unknown-elf-
+
+      - name: Extract benchmark result
+        id: extract
+        run: |
+          grep -E "Result:|Elapsed time" qemu_output.txt > result.txt || echo "Result not found" > result.txt
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          cat result.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment result to PR
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ✅ **cpubench test result**
+            ```
+            ${{ steps.extract.outputs.result }}
+            ```
