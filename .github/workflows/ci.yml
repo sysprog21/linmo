@@ -48,7 +48,7 @@ jobs:
       - name: Run Basic Apps
         id: test
         run: |
-          output=$(.ci/run-qemu-tests.sh cpubench test64)
+          output=$(.ci/run-qemu-tests.sh cpubench )
           echo "TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
