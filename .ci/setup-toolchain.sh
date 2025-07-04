@@ -38,7 +38,7 @@ setup_llvm_toolchain() {
     echo "$PWD/riscv/bin" >> "$GITHUB_PATH"
 
     # Set cross-compile prefix for LLVM
-    echo "CROSS_COMPILE=llvm-" >> "$GITHUB_ENV"
+    echo "CROSS_COMPILE=riscv32-unknown-elf-" >> "$GITHUB_ENV"
     echo "TOOLCHAIN_TYPE=llvm" >> "$GITHUB_ENV"
 }
 
