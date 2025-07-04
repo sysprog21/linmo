@@ -7,35 +7,43 @@ on:
     branches: [main, ci]
 
 jobs:
-  basic-tests:
+  matrix-tests:
     runs-on: ubuntu-24.04
-    name: Basic Tests
+    name: Test on ${{ matrix.toolchain }} toolchain
+
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gnu, llvm]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install base dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential qemu-system-riscv32 wget
 
-      - name: Setup RISC-V Toolchain
-        run: .ci/setup-toolchain.sh
+      - name: Setup ${{ matrix.toolchain }} toolchain
+        run: .ci/setup-toolchain.sh ${{ matrix.toolchain }}
 
       - name: Verify toolchain installation
         run: |
-          riscv32-unknown-elf-gcc --version
+          if [ "${{ matrix.toolchain }}" = "gnu" ]; then
+            riscv32-unknown-elf-gcc --version
+          else
+            riscv32-unknown-elf-clang --version
+            riscv32-unknown-elf-llvm-objdump --version
+          fi
           qemu-system-riscv32 --version
-        env:
-          CROSS_COMPILE: riscv32-unknown-elf-
 
       - name: Build Kernel
         run: |
           make clean
           make
         env:
-          CROSS_COMPILE: riscv32-unknown-elf-
+          TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
       - name: Run Basic Apps
         id: test
@@ -44,6 +52,8 @@ jobs:
           echo "TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request'
@@ -51,9 +61,26 @@ jobs:
         with:
           script: |
             const output = `${{ steps.test.outputs.TEST_OUTPUT }}`;
+            const toolchain = `${{ matrix.toolchain }}`.toUpperCase();
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Linmo QEMU App Test Result\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
+              body: `## Linmo QEMU App Test Result (${toolchain} Toolchain)\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
             });
+
+  # Optional: Create a summary job that depends on all matrix jobs
+  test-summary:
+    runs-on: ubuntu-24.04
+    needs: matrix-tests
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
+            echo "✅ All toolchain tests passed!"
+          else
+            echo "❌ Some toolchain tests failed"
+            exit 1
+          fi

@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e
-export CROSS_COMPILE=${CROSS_COMPILE:-riscv32-unknown-elf-}
 
 # Check if at least one app is provided
 if [ $# -eq 0 ]; then
@@ -11,19 +10,21 @@ fi
 
 APPS="$@"
 TIMEOUT=10
+TOOLCHAIN_TYPE=${TOOLCHAIN_TYPE:-gnu}
 
 echo "[+] Will run apps: $APPS"
+echo "[+] Using toolchain: $TOOLCHAIN_TYPE"
 echo ""
 
 # Loop through each app
 for app in $APPS; do
-    echo "=== Running $app ==="
+    echo "=== Running $app ($TOOLCHAIN_TYPE) ==="
 
     # Build the app
-    echo "[+] Building $app..."
+    echo "[+] Building $app with $TOOLCHAIN_TYPE toolchain..."
     make clean >/dev/null 2>&1
-    if ! make "$app" >/dev/null 2>&1; then
-        echo "[!] Failed to build $app"
+    if ! make "$app" TOOLCHAIN_TYPE="$TOOLCHAIN_TYPE" >/dev/null 2>&1; then
+        echo "[!] Failed to build $app with $TOOLCHAIN_TYPE"
         echo ""
         continue
     fi
@@ -46,4 +47,4 @@ for app in $APPS; do
     echo ""
 done
 
-echo "[+] All apps tested"
+echo "[+] All apps tested with $TOOLCHAIN_TYPE toolchain"
