@@ -1,0 +1,57 @@
+name: Linmo CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  basic-tests:
+    runs-on: ubuntu-24.04
+    name: Basic Tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential qemu-system-riscv32 wget
+
+      - name: Setup GNU RISC-V Toolchain
+        run: .ci/setup-toolchain.sh gnu
+
+      - name: Verify toolchain installation
+        run: |
+          riscv32-unknown-elf-gcc --version
+          qemu-system-riscv32 --version
+        env:
+          CROSS_COMPILE: riscv32-unknown-elf-
+
+      - name: Build Kernel
+        run: |
+          make clean
+          make
+        env:
+          CROSS_COMPILE: riscv32-unknown-elf-
+
+      - name: Run Basic Apps
+        id: test
+        run: |
+          output=$(.ci/run-qemu-tests.sh cpubench test64)
+          echo "TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          echo "$output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `${{ steps.test.outputs.TEST_OUTPUT }}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Linmo QEMU App Test Result\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
+            });
