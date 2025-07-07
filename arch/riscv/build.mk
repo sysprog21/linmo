@@ -41,8 +41,8 @@ ifeq ($(CC_IS_CLANG),1)
 
     CFLAGS += --target=riscv32-unknown-elf
     CFLAGS += -Wno-unused-command-line-argument
-    ASFLAGS = --target=riscv32-unknown-elf $(ARCH_FLAGS)
-    LDFLAGS = -m elf32lriscv --gc-sections
+    ASFLAGS = --target=riscv32-unknown-elf
+    LDFLAGS = -m elf32lriscv
 else
     CC    = $(CC_DEFAULT)
     AS    = $(CROSS_COMPILE)as
@@ -51,12 +51,12 @@ else
     READ  = $(CROSS_COMPILE)readelf
     OBJ   = $(CROSS_COMPILE)objcopy
     SIZE  = $(CROSS_COMPILE)size
-
-    ASFLAGS = $(ARCH_FLAGS)
-    LDFLAGS = -melf32lriscv --gc-sections
+    LDFLAGS = -melf32lriscv
 endif
 
-AR    = $(CROSS_COMPILE)ar
+AR    	= $(CROSS_COMPILE)ar
+ASFLAGS += $(ARCH_FLAGS)
+LDFLAGS += --gc-sections
 
 ARFLAGS = r
 LDSCRIPT = $(ARCH_DIR)/riscv32-qemu.ld
