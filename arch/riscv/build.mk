@@ -17,9 +17,9 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -DF_TIMER=$(F_TICK) \
            -include config.h
 
-# Toolchain override (default to GNU)
 CROSS_COMPILE ?= riscv32-unknown-elf-
-TOOLCHAIN_TYPE ?= gnu
+CC     = $(CROSS_COMPILE)gcc
+CC_IS_CLANG := $(shell $(CC) --version 2>/dev/null | grep -qi clang && echo 1)
 
 # Architecture flags
 ARCH_FLAGS = -march=rv32imzicsr -mabi=ilp32
