@@ -40,7 +40,7 @@ ifeq ($(TOOLCHAIN_TYPE),llvm)
     READ  = $(CROSS_COMPILE)llvm-readelf
     OBJ   = $(CROSS_COMPILE)llvm-objcopy
     SIZE  = $(CROSS_COMPILE)llvm-size
-    AR    = $(CROSS_COMPILE)llvm-ar
+    AR    = $(CROSS_COMPILE)ar
 
     CFLAGS += --target=riscv32-unknown-elf
     CFLAGS += -Wno-unused-command-line-argument
