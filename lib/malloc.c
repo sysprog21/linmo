@@ -109,7 +109,6 @@ void free(void *ptr)
 static void selective_coalesce(void)
 {
     memblock_t *p = first_free;
-    uint32_t coalesced = 0;
 
     while (p && p->next) {
         /* Merge only when blocks are FREE *and* adjacent in memory */
@@ -117,7 +116,6 @@ static void selective_coalesce(void)
         if (!IS_USED(p) && !IS_USED(p->next) && pend == (uint8_t *) p->next) {
             p->size = GET_SIZE(p) + sizeof(memblock_t) + GET_SIZE(p->next);
             p->next = p->next->next;
-            coalesced++;
             free_blocks_count--;
         } else {
             p = p->next;
