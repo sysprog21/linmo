@@ -18,14 +18,13 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -include config.h
 
 CROSS_COMPILE ?= riscv32-unknown-elf-
-CC     = $(CROSS_COMPILE)gcc
-CC_IS_CLANG := $(shell $(CC) --version 2>/dev/null | grep -qi clang && echo 1)
-
+CC_DEFAULT := $(CROSS_COMPILE)gcc
+CC_IS_CLANG := $(shell $(CC_DEFAULT) --version 2>/dev/null | grep -qi clang && echo 1)
 # Architecture flags
 ARCH_FLAGS = -march=rv32imzicsr -mabi=ilp32
 
 # Common compiler flags
-CFLAGS += -Wall -Wextra -Wshadow -Wno-unused-parameter -Werror
+CFLAGS += -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter
 CFLAGS += -O2 -std=gnu99
 CFLAGS += $(ARCH_FLAGS)
 CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
@@ -39,7 +38,6 @@ ifeq ($(CC_IS_CLANG),1)
     READ  = $(CROSS_COMPILE)llvm-readelf
     OBJ   = $(CROSS_COMPILE)llvm-objcopy
     SIZE  = $(CROSS_COMPILE)llvm-size
-    AR    = $(CROSS_COMPILE)ar
 
     CFLAGS += --target=riscv32-unknown-elf
     CFLAGS += -Wno-unused-command-line-argument
@@ -47,14 +45,12 @@ ifeq ($(CC_IS_CLANG),1)
     LDFLAGS = -m elf32lriscv --gc-sections
 else
     CC    = $(CC_DEFAULT)
-    CC    = $(CROSS_COMPILE)gcc
     AS    = $(CROSS_COMPILE)as
     LD    = $(CROSS_COMPILE)ld
     DUMP  = $(CROSS_COMPILE)objdump -Mno-aliases
     READ  = $(CROSS_COMPILE)readelf
     OBJ   = $(CROSS_COMPILE)objcopy
     SIZE  = $(CROSS_COMPILE)size
-    AR    = $(CROSS_COMPILE)ar
 
     ASFLAGS = $(ARCH_FLAGS)
     LDFLAGS = -melf32lriscv --gc-sections
