@@ -62,24 +62,44 @@ jobs:
         env:
           TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
+      - name: Run Functional Tests
+        id: functional_test
+        run: |
+          set +e
+          output=$(.ci/run-functional-tests.sh)
+          test_exit_code=$?
+          set -e
+          echo "FUNCTIONAL_TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          echo "$output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "FUNCTIONAL_TEST_EXIT_CODE=$test_exit_code" >> $GITHUB_OUTPUT
+          if [ $test_exit_code -ne 0 ]; then
+            echo "Step 3 functional tests failed"
+            exit 1
+          fi
+        env:
+          TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
+
       - name: Comment PR with results
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            const output = `${{ steps.test.outputs.TEST_OUTPUT }}`;
+            const crashOutput = `${{ steps.test.outputs.TEST_OUTPUT }}`;
+            const functionalOutput = `${{ steps.functional_test.outputs.FUNCTIONAL_TEST_OUTPUT }}`;
             const toolchain = `${{ matrix.toolchain }}`.toUpperCase();
-            const exitCode = `${{ steps.test.outputs.TEST_EXIT_CODE }}`;
-            const status = exitCode === '0' ? '✅ PASSED' : '❌ FAILED';
-            const summary = exitCode === '0' ?
-              'All applications finished cleanly or timed out (no exceptions/crashes)' :
-              'Some applications crashed or triggered exceptions';
+            const crashExitCode = `${{ steps.test.outputs.TEST_EXIT_CODE }}`;
+            const functionalExitCode = `${{ steps.functional_test.outputs.FUNCTIONAL_TEST_EXIT_CODE }}`;
+
+            const crashStatus = crashExitCode === '0' ? '✅ PASSED' : '❌ FAILED';
+            const functionalStatus = functionalExitCode === '0' ? '✅ PASSED' : '❌ FAILED';
+            const overallStatus = (crashExitCode === '0' && functionalExitCode === '0') ? '✅ PASSED' : '❌ FAILED';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Linmo App Validation Results (${toolchain} Toolchain)\n\n**Status:** ${status}\n**Summary:** ${summary}\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
+              body: `## Linmo CI Test Results (${toolchain} Toolchain)\n\n**Overall Status:** ${overallStatus}\n\n### Step 2: Application Crash Sanity Check\n**Status:** ${crashStatus}\n\`\`\`\n${crashOutput}\n\`\`\`\n\n### Step 3: Functional Tests\n**Status:** ${functionalStatus}\n\`\`\`\n${functionalOutput}\n\`\`\`\n\n_This is an automated report from CI._`
             });
 
   # Optional: Create a summary job that depends on all matrix jobs
