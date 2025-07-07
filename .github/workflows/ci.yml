@@ -102,18 +102,53 @@ jobs:
               body: `## Linmo CI Test Results (${toolchain} Toolchain)\n\n**Overall Status:** ${overallStatus}\n\n### Step 2: Application Crash Sanity Check\n**Status:** ${crashStatus}\n\`\`\`\n${crashOutput}\n\`\`\`\n\n### Step 3: Functional Tests\n**Status:** ${functionalStatus}\n\`\`\`\n${functionalOutput}\n\`\`\`\n\n_This is an automated report from CI._`
             });
 
-  # Optional: Create a summary job that depends on all matrix jobs
+  # Comprehensive test summary with detailed reporting
   test-summary:
     runs-on: ubuntu-24.04
     needs: matrix-tests
     if: always()
 
     steps:
-      - name: Check test results
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate Test Summary
         run: |
           if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
-            echo "✅ All toolchain tests passed!"
+            BUILD_STATUS="✅ PASSED"
+            CRASH_STATUS="✅ PASSED"
+            FUNCTIONAL_STATUS="✅ PASSED"
+            OVERALL_STATUS="✅ PASSED"
           else
-            echo "❌ Some toolchain tests failed"
+            BUILD_STATUS="❌ FAILED"
+            CRASH_STATUS="❌ FAILED"
+            FUNCTIONAL_STATUS="❌ FAILED"
+            OVERALL_STATUS="❌ FAILED"
+          fi
+
+          .ci/generate-test-summary.sh \
+            --build-status "$BUILD_STATUS" \
+            --crash-status "$CRASH_STATUS" \
+            --functional-status "$FUNCTIONAL_STATUS" \
+            --overall-status "$OVERALL_STATUS" \
+            --output-file "test-summary.toml"
+
+          cat test-summary.toml
+
+      - name: Upload Test Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: test-summary.toml
+          retention-days: 30
+
+      - name: Final Status Check
+        run: |
+          if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
+            echo "All tests passed"
+            exit 0
+          else
+            echo "Tests failed"
             exit 1
           fi
