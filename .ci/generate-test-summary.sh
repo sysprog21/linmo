@@ -57,33 +57,49 @@ cat > "$SUMMARY_FILE" << EOF
 status = "$OVERALL_STATUS"
 timestamp = "$(date -Iseconds)"
 
-[toolchains.gnu]
+[info]
+architecture = "riscv32"
+timeout = 5
+
+[gnu]
 build = "$GNU_BUILD_STATUS"
 crash = "$GNU_CRASH_STATUS"
 functional = "$GNU_FUNCTIONAL_STATUS"
 
-[toolchains.llvm]
+[llvm]
 build = "$LLVM_BUILD_STATUS"
 crash = "$LLVM_CRASH_STATUS"
 functional = "$LLVM_FUNCTIONAL_STATUS"
-
-[info]
-architecture = "riscv32"
-timeout = 5
 EOF
 
 # Add apps data if provided
 if [ -n "$APPS_DATA" ]; then
     echo "" >> "$SUMMARY_FILE"
-    echo "[apps]" >> "$SUMMARY_FILE"
-    echo "$APPS_DATA" >> "$SUMMARY_FILE"
+
+    # Extract GNU apps
+    echo "[gnu.apps]" >> "$SUMMARY_FILE"
+    echo "$APPS_DATA" | tr ' ' '\n' | grep "^gnu_" | sed 's/gnu_//' >> "$SUMMARY_FILE" || true
+
+    echo "" >> "$SUMMARY_FILE"
+
+    # Extract LLVM apps
+    echo "[llvm.apps]" >> "$SUMMARY_FILE"
+    echo "$APPS_DATA" | tr ' ' '\n' | grep "^llvm_" | sed 's/llvm_//' >> "$SUMMARY_FILE" || true
 fi
 
 # Add functional test data if provided
 if [ -n "$FUNCTIONAL_DATA" ]; then
     echo "" >> "$SUMMARY_FILE"
-    echo "[functional_tests]" >> "$SUMMARY_FILE"
-    echo "$FUNCTIONAL_DATA" >> "$SUMMARY_FILE"
+
+    # Extract GNU functional tests
+    echo "[gnu.functional_tests]" >> "$SUMMARY_FILE"
+    echo "$FUNCTIONAL_DATA" | tr ' ' '\n' | grep "^gnu_" | sed 's/gnu_//' >> "$SUMMARY_FILE" || true
+
+    echo "" >> "$SUMMARY_FILE"
+
+    # Extract LLVM functional tests
+    echo "[llvm.functional_tests]" >> "$SUMMARY_FILE"
+    echo "$FUNCTIONAL_DATA" | tr ' ' '\n' | grep "^llvm_" | sed 's/llvm_//' >> "$SUMMARY_FILE" || true
 fi
 
 # Print minimal terminal output

@@ -31,13 +31,12 @@ get_value() {
 
 get_subsection_value() {
     local section=$1
-    local subsection=$2
-    local key=$3
-    awk -v section="$section" -v subsection="$subsection" -v key="$key" '
+    local key=$2
+    awk -v section="$section" -v key="$key" '
     BEGIN { in_section = 0 }
     /^\[.*\]/ {
         in_section = 0
-        if ($0 == "[" section "." subsection "]") in_section = 1
+        if ($0 == "[" section "]") in_section = 1
     }
     in_section && /^[a-zA-Z_]/ {
         split($0, parts, " = ")
@@ -50,67 +49,31 @@ get_subsection_value() {
 }
 
 get_apps_list() {
-    awk '
-    /^\[apps\]/ {
-        # Found [apps] section, check if data is on same line
-        if (length($0) > 6) {
-            # Data on same line after [apps]
-            data = substr($0, 7)
-            gsub(/^[ \t]+/, "", data)
-            split(data, pairs, " ")
-            for (i in pairs) {
-                if (pairs[i] ~ /=/) {
-                    printf "%s ", pairs[i]
-                }
-            }
-        }
-        getline
-        # Process following lines until next section
-        while ($0 !~ /^\[/ && NF > 0) {
-            if ($0 ~ /=/) {
-                gsub(/^[ \t]+/, "")
-                split($0, pairs, " ")
-                for (i in pairs) {
-                    if (pairs[i] ~ /=/) {
-                        printf "%s ", pairs[i]
-                    }
-                }
-            }
-            if ((getline) <= 0) break
-        }
+    local toolchain=$1
+    awk -v toolchain="$toolchain" '
+    BEGIN { in_section = 0 }
+    /^\[.*\]/ {
+        in_section = 0
+        if ($0 == "[" toolchain ".apps]") in_section = 1
+    }
+    in_section && /=/ && !/^\[/ {
+        gsub(/^[ \t]+/, "")
+        printf "%s ", $0
     }
     ' "$TOML_FILE"
 }
 
 get_functional_list() {
-    awk '
-    /^\[functional_tests\]/ {
-        # Found [functional_tests] section, check if data is on same line
-        if (length($0) > 18) {
-            # Data on same line after [functional_tests]
-            data = substr($0, 19)
-            gsub(/^[ \t]+/, "", data)
-            split(data, pairs, " ")
-            for (i in pairs) {
-                if (pairs[i] ~ /=/) {
-                    printf "%s ", pairs[i]
-                }
-            }
-        }
-        getline
-        # Process following lines until next section
-        while ($0 !~ /^\[/ && NF > 0) {
-            if ($0 ~ /=/) {
-                gsub(/^[ \t]+/, "")
-                split($0, pairs, " ")
-                for (i in pairs) {
-                    if (pairs[i] ~ /=/) {
-                        printf "%s ", pairs[i]
-                    }
-                }
-            }
-            if ((getline) <= 0) break
-        }
+    local toolchain=$1
+    awk -v toolchain="$toolchain" '
+    BEGIN { in_section = 0 }
+    /^\[.*\]/ {
+        in_section = 0
+        if ($0 == "[" toolchain ".functional_tests]") in_section = 1
+    }
+    in_section && /=/ && !/^\[/ {
+        gsub(/^[ \t]+/, "")
+        printf "%s ", $0
     }
     ' "$TOML_FILE"
 }
@@ -119,16 +82,18 @@ get_functional_list() {
 OVERALL_STATUS=$(get_value "summary" "status")
 TIMESTAMP=$(get_value "summary" "timestamp")
 
-GNU_BUILD=$(get_subsection_value "toolchains" "gnu" "build")
-GNU_CRASH=$(get_subsection_value "toolchains" "gnu" "crash")
-GNU_FUNCTIONAL=$(get_subsection_value "toolchains" "gnu" "functional")
+GNU_BUILD=$(get_subsection_value "gnu" "build")
+GNU_CRASH=$(get_subsection_value "gnu" "crash")
+GNU_FUNCTIONAL=$(get_subsection_value "gnu" "functional")
 
-LLVM_BUILD=$(get_subsection_value "toolchains" "llvm" "build")
-LLVM_CRASH=$(get_subsection_value "toolchains" "llvm" "crash")
-LLVM_FUNCTIONAL=$(get_subsection_value "toolchains" "llvm" "functional")
+LLVM_BUILD=$(get_subsection_value "llvm" "build")
+LLVM_CRASH=$(get_subsection_value "llvm" "crash")
+LLVM_FUNCTIONAL=$(get_subsection_value "llvm" "functional")
 
-APPS_LIST=$(get_apps_list)
-FUNCTIONAL_LIST=$(get_functional_list)
+GNU_APPS_LIST=$(get_apps_list "gnu")
+LLVM_APPS_LIST=$(get_apps_list "llvm")
+GNU_FUNCTIONAL_LIST=$(get_functional_list "gnu")
+LLVM_FUNCTIONAL_LIST=$(get_functional_list "llvm")
 
 # Status symbols
 get_symbol() {
@@ -155,36 +120,74 @@ cat << EOF
 EOF
 
 # Add apps section if data exists
-if [ -n "$APPS_LIST" ]; then
+if [ -n "$GNU_APPS_LIST" ] || [ -n "$LLVM_APPS_LIST" ]; then
     echo ""
     echo "### Application Tests"
     echo ""
-    echo "| App | Status |"
-    echo "|-----|--------|"
+    echo "| App | GNU | LLVM |"
+    echo "|-----|-----|------|"
 
-    for app_data in $APPS_LIST; do
-        if [ -n "$app_data" ] && [[ "$app_data" == *"="* ]]; then
-            app=$(echo "$app_data" | cut -d= -f1)
-            status=$(echo "$app_data" | cut -d= -f2)
-            echo "| \`$app\` | $(get_symbol "$status") $status |"
-        fi
+    # Get all unique app names from both toolchains
+    all_apps=""
+    [ -n "$GNU_APPS_LIST" ] && all_apps="$all_apps $(echo "$GNU_APPS_LIST" | tr ' ' '\n' | cut -d= -f1)"
+    [ -n "$LLVM_APPS_LIST" ] && all_apps="$all_apps $(echo "$LLVM_APPS_LIST" | tr ' ' '\n' | cut -d= -f1)"
+    app_names=$(echo "$all_apps" | tr ' ' '\n' | sort -u)
+
+    for app in $app_names; do
+        gnu_status=""
+        llvm_status=""
+
+        # Find GNU status
+        for app_data in $GNU_APPS_LIST; do
+            if [[ "$app_data" == "${app}="* ]]; then
+                gnu_status=$(echo "$app_data" | cut -d= -f2)
+            fi
+        done
+
+        # Find LLVM status
+        for app_data in $LLVM_APPS_LIST; do
+            if [[ "$app_data" == "${app}="* ]]; then
+                llvm_status=$(echo "$app_data" | cut -d= -f2)
+            fi
+        done
+
+        echo "| \`$app\` | $(get_symbol "$gnu_status") $gnu_status | $(get_symbol "$llvm_status") $llvm_status |"
     done
 fi
 
 # Add functional tests section if data exists
-if [ -n "$FUNCTIONAL_LIST" ]; then
+if [ -n "$GNU_FUNCTIONAL_LIST" ] || [ -n "$LLVM_FUNCTIONAL_LIST" ]; then
     echo ""
     echo "### Functional Test Details"
     echo ""
-    echo "| Test | Status |"
-    echo "|------|--------|"
+    echo "| Test | GNU | LLVM |"
+    echo "|------|-----|------|"
 
-    for test_data in $FUNCTIONAL_LIST; do
-        if [ -n "$test_data" ] && [[ "$test_data" == *"="* ]]; then
-            test=$(echo "$test_data" | cut -d= -f1)
-            status=$(echo "$test_data" | cut -d= -f2)
-            echo "| \`$test\` | $(get_symbol "$status") $status |"
-        fi
+    # Get all unique test names from both toolchains
+    all_tests=""
+    [ -n "$GNU_FUNCTIONAL_LIST" ] && all_tests="$all_tests $(echo "$GNU_FUNCTIONAL_LIST" | tr ' ' '\n' | cut -d= -f1)"
+    [ -n "$LLVM_FUNCTIONAL_LIST" ] && all_tests="$all_tests $(echo "$LLVM_FUNCTIONAL_LIST" | tr ' ' '\n' | cut -d= -f1)"
+    test_names=$(echo "$all_tests" | tr ' ' '\n' | sort -u)
+
+    for test in $test_names; do
+        gnu_status=""
+        llvm_status=""
+
+        # Find GNU status
+        for test_data in $GNU_FUNCTIONAL_LIST; do
+            if [[ "$test_data" == "${test}="* ]]; then
+                gnu_status=$(echo "$test_data" | cut -d= -f2)
+            fi
+        done
+
+        # Find LLVM status
+        for test_data in $LLVM_FUNCTIONAL_LIST; do
+            if [[ "$test_data" == "${test}="* ]]; then
+                llvm_status=$(echo "$test_data" | cut -d= -f2)
+            fi
+        done
+
+        echo "| \`$test\` | $(get_symbol "$gnu_status") $gnu_status | $(get_symbol "$llvm_status") $llvm_status |"
     done
 fi
 

@@ -56,13 +56,21 @@ for artifact_dir in "$RESULTS_DIR"/test-results-*; do
             ;;
     esac
 
-    # Collect apps and functional data
+    # Collect apps and functional data with toolchain prefix
     if [ -f "$artifact_dir/apps_data" ] && [ -s "$artifact_dir/apps_data" ]; then
-        APPS_DATA="$APPS_DATA $(cat "$artifact_dir/apps_data" | tr '\n' ' ')"
+        while read -r line; do
+            if [ -n "$line" ]; then
+                APPS_DATA="$APPS_DATA ${TOOLCHAIN}_${line}"
+            fi
+        done < "$artifact_dir/apps_data"
     fi
 
     if [ -f "$artifact_dir/functional_data" ] && [ -s "$artifact_dir/functional_data" ]; then
-        FUNCTIONAL_DATA="$FUNCTIONAL_DATA $(cat "$artifact_dir/functional_data" | tr '\n' ' ')"
+        while read -r line; do
+            if [ -n "$line" ]; then
+                FUNCTIONAL_DATA="$FUNCTIONAL_DATA ${TOOLCHAIN}_${line}"
+            fi
+        done < "$artifact_dir/functional_data"
     fi
 done
 
@@ -72,9 +80,9 @@ if [ "$GNU_BUILD" = "passed" ] && [ "$GNU_CRASH" = "passed" ] && [ "$GNU_FUNCTIO
     OVERALL="passed"
 fi
 
-# Clean and deduplicate data
-APPS_DATA=$(echo "$APPS_DATA" | xargs | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
-FUNCTIONAL_DATA=$(echo "$FUNCTIONAL_DATA" | xargs | tr ' ' '\n' | sort -u | tr '\n' ' ' | xargs)
+# Clean data (keep duplicates since they're from different toolchains)
+APPS_DATA=$(echo "$APPS_DATA" | xargs)
+FUNCTIONAL_DATA=$(echo "$FUNCTIONAL_DATA" | xargs)
 
 # Generate summary using existing script
 .ci/generate-test-summary.sh \
