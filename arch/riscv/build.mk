@@ -32,7 +32,6 @@ CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
 CFLAGS += $(INC_DIRS) $(DEFINES) -fdata-sections -ffunction-sections
 
 ifeq ($(CC_IS_CLANG),1)
-ifeq ($(TOOLCHAIN_TYPE),llvm)
     CC    = $(CROSS_COMPILE)clang
     AS    = $(CROSS_COMPILE)clang
     LD    = $(CROSS_COMPILE)ld.lld
