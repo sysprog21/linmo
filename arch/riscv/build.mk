@@ -17,6 +17,10 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -DF_TIMER=$(F_TICK) \
            -include config.h
 
+# Toolchain override (default to GNU)
+CROSS_COMPILE ?= riscv32-unknown-elf-
+TOOLCHAIN_TYPE ?= gnu
+
 # Architecture flags
 ARCH_FLAGS = -march=rv32imzicsr -mabi=ilp32
 
@@ -28,6 +32,7 @@ CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
 CFLAGS += $(INC_DIRS) $(DEFINES) -fdata-sections -ffunction-sections
 
 ifeq ($(CC_IS_CLANG),1)
+ifeq ($(TOOLCHAIN_TYPE),llvm)
     CC    = $(CROSS_COMPILE)clang
     AS    = $(CROSS_COMPILE)clang
     LD    = $(CROSS_COMPILE)ld.lld
@@ -35,6 +40,7 @@ ifeq ($(CC_IS_CLANG),1)
     READ  = $(CROSS_COMPILE)llvm-readelf
     OBJ   = $(CROSS_COMPILE)llvm-objcopy
     SIZE  = $(CROSS_COMPILE)llvm-size
+    AR    = $(CROSS_COMPILE)llvm-ar
 
     CFLAGS += --target=riscv32-unknown-elf
     CFLAGS += -Wno-unused-command-line-argument
@@ -42,12 +48,14 @@ ifeq ($(CC_IS_CLANG),1)
     LDFLAGS = -m elf32lriscv --gc-sections
 else
     CC    = $(CC_DEFAULT)
+    CC    = $(CROSS_COMPILE)gcc
     AS    = $(CROSS_COMPILE)as
     LD    = $(CROSS_COMPILE)ld
     DUMP  = $(CROSS_COMPILE)objdump -Mno-aliases
     READ  = $(CROSS_COMPILE)readelf
     OBJ   = $(CROSS_COMPILE)objcopy
     SIZE  = $(CROSS_COMPILE)size
+    AR    = $(CROSS_COMPILE)ar
 
     ASFLAGS = $(ARCH_FLAGS)
     LDFLAGS = -melf32lriscv --gc-sections
