@@ -86,6 +86,19 @@ if [ -n "$BUILD_FAILED_APPS" ]; then
     echo "[!] BUILD FAILED: $BUILD_FAILED_APPS"
 fi
 
+# Generate parseable output for summary
+echo ""
+echo "=== PARSEABLE_OUTPUT ==="
+for app in $APPS; do
+    if echo "$PASSED_APPS" | grep -q "$app"; then
+        echo "APP_STATUS:$app=passed"
+    elif echo "$FAILED_APPS" | grep -q "$app"; then
+        echo "APP_STATUS:$app=failed"
+    elif echo "$BUILD_FAILED_APPS" | grep -q "$app"; then
+        echo "APP_STATUS:$app=build_failed"
+    fi
+done
+
 # Exit with error if any apps failed or had exceptions
 if [ -n "$FAILED_APPS" ] || [ -n "$BUILD_FAILED_APPS" ]; then
     echo ""

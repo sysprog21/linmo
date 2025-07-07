@@ -1,28 +1,48 @@
 #!/bin/bash
 set -e
 
-# Minimal TOML Test Summary Generator
+# Enhanced TOML Test Summary Generator
 SUMMARY_FILE=${SUMMARY_FILE:-test-summary.toml}
 
 # Parse arguments
-BUILD_STATUS="failed"
-CRASH_STATUS="failed"
-FUNCTIONAL_STATUS="failed"
+GNU_BUILD_STATUS="failed"
+LLVM_BUILD_STATUS="failed"
+GNU_CRASH_STATUS="failed"
+LLVM_CRASH_STATUS="failed"
+GNU_FUNCTIONAL_STATUS="failed"
+LLVM_FUNCTIONAL_STATUS="failed"
 OVERALL_STATUS="failed"
+APPS_DATA=""
+FUNCTIONAL_DATA=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --build-status)
-            if [[ "$2" == *"PASSED"* ]]; then BUILD_STATUS="passed"; else BUILD_STATUS="failed"; fi
+        --gnu-build)
+            if [[ "$2" == *"PASSED"* ]]; then GNU_BUILD_STATUS="passed"; else GNU_BUILD_STATUS="failed"; fi
             shift 2 ;;
-        --crash-status)
-            if [[ "$2" == *"PASSED"* ]]; then CRASH_STATUS="passed"; else CRASH_STATUS="failed"; fi
+        --llvm-build)
+            if [[ "$2" == *"PASSED"* ]]; then LLVM_BUILD_STATUS="passed"; else LLVM_BUILD_STATUS="failed"; fi
             shift 2 ;;
-        --functional-status)
-            if [[ "$2" == *"PASSED"* ]]; then FUNCTIONAL_STATUS="passed"; else FUNCTIONAL_STATUS="failed"; fi
+        --gnu-crash)
+            if [[ "$2" == *"PASSED"* ]]; then GNU_CRASH_STATUS="passed"; else GNU_CRASH_STATUS="failed"; fi
+            shift 2 ;;
+        --llvm-crash)
+            if [[ "$2" == *"PASSED"* ]]; then LLVM_CRASH_STATUS="passed"; else LLVM_CRASH_STATUS="failed"; fi
+            shift 2 ;;
+        --gnu-functional)
+            if [[ "$2" == *"PASSED"* ]]; then GNU_FUNCTIONAL_STATUS="passed"; else GNU_FUNCTIONAL_STATUS="failed"; fi
+            shift 2 ;;
+        --llvm-functional)
+            if [[ "$2" == *"PASSED"* ]]; then LLVM_FUNCTIONAL_STATUS="passed"; else LLVM_FUNCTIONAL_STATUS="failed"; fi
             shift 2 ;;
         --overall-status)
             if [[ "$2" == *"PASSED"* ]]; then OVERALL_STATUS="passed"; else OVERALL_STATUS="failed"; fi
+            shift 2 ;;
+        --apps-data)
+            APPS_DATA="$2"
+            shift 2 ;;
+        --functional-data)
+            FUNCTIONAL_DATA="$2"
             shift 2 ;;
         --output-file)
             SUMMARY_FILE="$2"
@@ -36,24 +56,41 @@ cat > "$SUMMARY_FILE" << EOF
 [summary]
 status = "$OVERALL_STATUS"
 timestamp = "$(date -Iseconds)"
-toolchain = "${TOOLCHAIN_TYPE:-gnu}"
 
-[tests]
-build = "$BUILD_STATUS"
-crash = "$CRASH_STATUS"
-functional = "$FUNCTIONAL_STATUS"
+[toolchains.gnu]
+build = "$GNU_BUILD_STATUS"
+crash = "$GNU_CRASH_STATUS"
+functional = "$GNU_FUNCTIONAL_STATUS"
+
+[toolchains.llvm]
+build = "$LLVM_BUILD_STATUS"
+crash = "$LLVM_CRASH_STATUS"
+functional = "$LLVM_FUNCTIONAL_STATUS"
 
 [info]
 architecture = "riscv32"
 timeout = 5
 EOF
 
+# Add apps data if provided
+if [ -n "$APPS_DATA" ]; then
+    echo "" >> "$SUMMARY_FILE"
+    echo "[apps]" >> "$SUMMARY_FILE"
+    echo "$APPS_DATA" >> "$SUMMARY_FILE"
+fi
+
+# Add functional test data if provided
+if [ -n "$FUNCTIONAL_DATA" ]; then
+    echo "" >> "$SUMMARY_FILE"
+    echo "[functional_tests]" >> "$SUMMARY_FILE"
+    echo "$FUNCTIONAL_DATA" >> "$SUMMARY_FILE"
+fi
+
 # Print minimal terminal output
 echo "Linmo CI Summary:"
-echo "  Build:      $BUILD_STATUS"
-echo "  Crash Test: $CRASH_STATUS"
-echo "  Functional: $FUNCTIONAL_STATUS"
-echo "  Overall:    $OVERALL_STATUS"
+echo "  GNU:   build=$GNU_BUILD_STATUS crash=$GNU_CRASH_STATUS functional=$GNU_FUNCTIONAL_STATUS"
+echo "  LLVM:  build=$LLVM_BUILD_STATUS crash=$LLVM_CRASH_STATUS functional=$LLVM_FUNCTIONAL_STATUS"
+echo "  Overall: $OVERALL_STATUS"
 echo ""
 echo "Report: $SUMMARY_FILE"
 

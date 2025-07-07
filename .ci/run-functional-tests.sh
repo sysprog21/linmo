@@ -141,6 +141,32 @@ if [ -n "$BUILD_FAILED_TESTS" ]; then
     echo "[!] BUILD FAILED ($build_failed_count):$BUILD_FAILED_TESTS"
 fi
 
+# Generate parseable output for summary
+echo ""
+echo "=== PARSEABLE_OUTPUT ==="
+for test in $TESTS_TO_RUN; do
+    if echo "$PASSED_TESTS" | grep -q "$test"; then
+        echo "FUNCTIONAL_TEST:$test=passed"
+        # Add individual criteria results for mutex test
+        if [ "$test" = "mutex" ]; then
+            echo "FUNCTIONAL_CRITERIA:fairness=passed"
+            echo "FUNCTIONAL_CRITERIA:mutual_exclusion=passed"
+            echo "FUNCTIONAL_CRITERIA:data_consistency=passed"
+            echo "FUNCTIONAL_CRITERIA:overall=passed"
+        fi
+    elif echo "$FAILED_TESTS" | grep -q "$test"; then
+        echo "FUNCTIONAL_TEST:$test=failed"
+        if [ "$test" = "mutex" ]; then
+            echo "FUNCTIONAL_CRITERIA:fairness=failed"
+            echo "FUNCTIONAL_CRITERIA:mutual_exclusion=failed"
+            echo "FUNCTIONAL_CRITERIA:data_consistency=failed"
+            echo "FUNCTIONAL_CRITERIA:overall=failed"
+        fi
+    elif echo "$BUILD_FAILED_TESTS" | grep -q "$test"; then
+        echo "FUNCTIONAL_TEST:$test=build_failed"
+    fi
+done
+
 # Exit with error if any tests failed
 if [ -n "$FAILED_TESTS" ] || [ -n "$BUILD_FAILED_TESTS" ]; then
     echo ""

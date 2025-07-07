@@ -55,6 +55,13 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "TEST_EXIT_CODE=$test_exit_code" >> $GITHUB_OUTPUT
+
+          # Extract app statuses for TOML summary
+          apps_data=$(echo "$output" | grep "APP_STATUS:" | sed 's/APP_STATUS://' | tr '\n' ' ')
+          echo "APPS_DATA<<EOF" >> $GITHUB_OUTPUT
+          echo "$apps_data" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
           if [ $test_exit_code -ne 0 ]; then
             echo "Step 2 validation failed - apps crashed or had exceptions"
             exit 1
@@ -73,6 +80,13 @@ jobs:
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "FUNCTIONAL_TEST_EXIT_CODE=$test_exit_code" >> $GITHUB_OUTPUT
+
+          # Extract functional test data for TOML summary
+          functional_data=$(echo "$output" | grep "FUNCTIONAL_CRITERIA:" | sed 's/FUNCTIONAL_CRITERIA://' | tr '\n' ' ')
+          echo "FUNCTIONAL_DATA<<EOF" >> $GITHUB_OUTPUT
+          echo "$functional_data" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
           if [ $test_exit_code -ne 0 ]; then
             echo "Step 3 functional tests failed"
             exit 1
@@ -80,27 +94,23 @@ jobs:
         env:
           TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
-      - name: Comment PR with results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: Store Test Results
+        id: store_results
+        run: |
+          # Store results for matrix aggregation
+          mkdir -p test-results
+          echo "${{ matrix.toolchain }}" > test-results/toolchain
+          echo "${{ steps.test.outputs.TEST_EXIT_CODE }}" > test-results/crash_exit_code
+          echo "${{ steps.functional_test.outputs.FUNCTIONAL_TEST_EXIT_CODE }}" > test-results/functional_exit_code
+          echo "${{ steps.test.outputs.APPS_DATA }}" > test-results/apps_data
+          echo "${{ steps.functional_test.outputs.FUNCTIONAL_DATA }}" > test-results/functional_data
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const crashOutput = `${{ steps.test.outputs.TEST_OUTPUT }}`;
-            const functionalOutput = `${{ steps.functional_test.outputs.FUNCTIONAL_TEST_OUTPUT }}`;
-            const toolchain = `${{ matrix.toolchain }}`.toUpperCase();
-            const crashExitCode = `${{ steps.test.outputs.TEST_EXIT_CODE }}`;
-            const functionalExitCode = `${{ steps.functional_test.outputs.FUNCTIONAL_TEST_EXIT_CODE }}`;
-
-            const crashStatus = crashExitCode === '0' ? '✅ PASSED' : '❌ FAILED';
-            const functionalStatus = functionalExitCode === '0' ? '✅ PASSED' : '❌ FAILED';
-            const overallStatus = (crashExitCode === '0' && functionalExitCode === '0') ? '✅ PASSED' : '❌ FAILED';
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Linmo CI Test Results (${toolchain} Toolchain)\n\n**Overall Status:** ${overallStatus}\n\n### Step 2: Application Crash Sanity Check\n**Status:** ${crashStatus}\n\`\`\`\n${crashOutput}\n\`\`\`\n\n### Step 3: Functional Tests\n**Status:** ${functionalStatus}\n\`\`\`\n${functionalOutput}\n\`\`\`\n\n_This is an automated report from CI._`
-            });
+          name: test-results-${{ matrix.toolchain }}
+          path: test-results/
+          retention-days: 1
 
   # Comprehensive test summary with detailed reporting
   test-summary:
@@ -112,25 +122,60 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download Test Results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: all-test-results/
+
       - name: Generate Test Summary
         run: |
+          # Initialize status variables
+          GNU_BUILD="failed"
+          GNU_CRASH="failed"
+          GNU_FUNCTIONAL="failed"
+          LLVM_BUILD="failed"
+          LLVM_CRASH="failed"
+          LLVM_FUNCTIONAL="failed"
+          OVERALL="failed"
+
+          # Aggregate results from both toolchains
           if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
-            BUILD_STATUS="✅ PASSED"
-            CRASH_STATUS="✅ PASSED"
-            FUNCTIONAL_STATUS="✅ PASSED"
-            OVERALL_STATUS="✅ PASSED"
-          else
-            BUILD_STATUS="❌ FAILED"
-            CRASH_STATUS="❌ FAILED"
-            FUNCTIONAL_STATUS="❌ FAILED"
-            OVERALL_STATUS="❌ FAILED"
+            GNU_BUILD="passed"
+            GNU_CRASH="passed"
+            GNU_FUNCTIONAL="passed"
+            LLVM_BUILD="passed"
+            LLVM_CRASH="passed"
+            LLVM_FUNCTIONAL="passed"
+            OVERALL="passed"
           fi
 
+          # Collect apps data and functional data
+          APPS_DATA=""
+          FUNCTIONAL_DATA=""
+
+          for dir in all-test-results/test-results-*; do
+            if [ -d "$dir" ]; then
+              if [ -f "$dir/apps_data" ]; then
+                APPS_DATA="$APPS_DATA$(cat "$dir/apps_data")"
+              fi
+              if [ -f "$dir/functional_data" ]; then
+                FUNCTIONAL_DATA="$FUNCTIONAL_DATA$(cat "$dir/functional_data")"
+              fi
+            fi
+          done
+
           .ci/generate-test-summary.sh \
-            --build-status "$BUILD_STATUS" \
-            --crash-status "$CRASH_STATUS" \
-            --functional-status "$FUNCTIONAL_STATUS" \
-            --overall-status "$OVERALL_STATUS" \
+            --gnu-build "$([ "$GNU_BUILD" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --llvm-build "$([ "$LLVM_BUILD" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --gnu-crash "$([ "$GNU_CRASH" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --llvm-crash "$([ "$LLVM_CRASH" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --gnu-functional "$([ "$GNU_FUNCTIONAL" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --llvm-functional "$([ "$LLVM_FUNCTIONAL" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --overall-status "$([ "$OVERALL" = "passed" ] && echo "✅ PASSED" || echo "❌ FAILED")" \
+            --apps-data "$APPS_DATA" \
+            --functional-data "$FUNCTIONAL_DATA" \
             --output-file "test-summary.toml"
 
           cat test-summary.toml
@@ -142,6 +187,17 @@ jobs:
           name: test-summary
           path: test-summary.toml
           retention-days: 30
+
+      - name: Comment PR with Formatted Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          # Generate formatted PR comment
+          comment_body=$(.ci/format-pr-comment.sh test-summary.toml)
+
+          # Use GitHub CLI to post comment
+          echo "$comment_body" | gh pr comment ${{ github.event.number }} --body-file -
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Final Status Check
         run: |
