@@ -66,7 +66,7 @@ jobs:
 
       - name: Collect Test Data
         run: |
-          .ci/collect-test-data.sh "${{ matrix.toolchain }}" "${{ steps.test.outputs.TEST_OUTPUT }}" "${{ steps.functional_test.outputs.FUNCTIONAL_TEST_OUTPUT }}"
+          .ci/ci-tools.sh collect-data "${{ matrix.toolchain }}" "${{ steps.test.outputs.TEST_OUTPUT }}" "${{ steps.functional_test.outputs.FUNCTIONAL_TEST_OUTPUT }}"
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
@@ -93,7 +93,7 @@ jobs:
 
       - name: Generate Test Summary
         run: |
-          .ci/aggregate-results.sh all-test-results test-summary.toml
+          .ci/ci-tools.sh aggregate all-test-results test-summary.toml
           cat test-summary.toml
 
       - name: Upload Test Summary
@@ -107,7 +107,7 @@ jobs:
       - name: Comment PR with Formatted Summary
         if: github.event_name == 'pull_request'
         run: |
-          .ci/post-pr-comment.sh test-summary.toml ${{ github.event.number }}
+          .ci/ci-tools.sh post-comment test-summary.toml ${{ github.event.number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
