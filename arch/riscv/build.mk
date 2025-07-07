@@ -17,27 +17,49 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -DF_TIMER=$(F_TICK) \
            -include config.h
 
-ASFLAGS = -march=rv32imzicsr -mabi=ilp32
-CFLAGS += -Wall -Wextra -Wshadow -Wno-unused-parameter -Werror
+CROSS_COMPILE ?= riscv32-unknown-elf-
+CC_DEFAULT := $(CROSS_COMPILE)gcc
+CC_IS_CLANG := $(shell $(CC_DEFAULT) --version 2>/dev/null | grep -qi clang && echo 1)
+# Architecture flags
+ARCH_FLAGS = -march=rv32imzicsr -mabi=ilp32
+
+# Common compiler flags
+CFLAGS += -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter
 CFLAGS += -O2 -std=gnu99
-CFLAGS += -march=rv32imzicsr -mabi=ilp32
+CFLAGS += $(ARCH_FLAGS)
 CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
 CFLAGS += $(INC_DIRS) $(DEFINES) -fdata-sections -ffunction-sections
+
+ifeq ($(CC_IS_CLANG),1)
+    CC    = $(CROSS_COMPILE)clang
+    AS    = $(CROSS_COMPILE)clang
+    LD    = $(CROSS_COMPILE)ld.lld
+    DUMP  = $(CROSS_COMPILE)llvm-objdump -M no-aliases
+    READ  = $(CROSS_COMPILE)llvm-readelf
+    OBJ   = $(CROSS_COMPILE)llvm-objcopy
+    SIZE  = $(CROSS_COMPILE)llvm-size
+
+    CFLAGS += --target=riscv32-unknown-elf
+    CFLAGS += -Wno-unused-command-line-argument
+    ASFLAGS = --target=riscv32-unknown-elf $(ARCH_FLAGS)
+    LDFLAGS = -m elf32lriscv --gc-sections
+else
+    CC    = $(CC_DEFAULT)
+    AS    = $(CROSS_COMPILE)as
+    LD    = $(CROSS_COMPILE)ld
+    DUMP  = $(CROSS_COMPILE)objdump -Mno-aliases
+    READ  = $(CROSS_COMPILE)readelf
+    OBJ   = $(CROSS_COMPILE)objcopy
+    SIZE  = $(CROSS_COMPILE)size
+
+    ASFLAGS = $(ARCH_FLAGS)
+    LDFLAGS = -melf32lriscv --gc-sections
+endif
+
+AR    = $(CROSS_COMPILE)ar
+
 ARFLAGS = r
-
-# Linker flags
-LDFLAGS = -melf32lriscv --gc-sections
 LDSCRIPT = $(ARCH_DIR)/riscv32-qemu.ld
-
-CROSS_COMPILE ?= riscv-none-elf-
-CC = $(CROSS_COMPILE)gcc
-AS = $(CROSS_COMPILE)as
-LD = $(CROSS_COMPILE)ld
-DUMP = $(CROSS_COMPILE)objdump -Mno-aliases
-READ = $(CROSS_COMPILE)readelf
-OBJ = $(CROSS_COMPILE)objcopy
-SIZE = $(CROSS_COMPILE)size
-AR = $(CROSS_COMPILE)ar
 
 HAL_OBJS := boot.o hal.o muldiv.o
 HAL_OBJS := $(addprefix $(BUILD_KERNEL_DIR)/,$(HAL_OBJS))

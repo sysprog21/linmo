@@ -34,7 +34,7 @@ static inline uint16_t pipe_free_space_internal(const pipe_t *p)
     return (p->mask + 1) - p->used;
 }
 
-static inline char pipe_get_byte(pipe_t *p)
+static inline __attribute__((__unused__)) char pipe_get_byte(pipe_t *p)
 {
     char val = p->buf[p->head];
     p->head = (p->head + 1) & p->mask;
@@ -42,7 +42,7 @@ static inline char pipe_get_byte(pipe_t *p)
     return val;
 }
 
-static inline void pipe_put_byte(pipe_t *p, char c)
+static inline __attribute__((__unused__)) void pipe_put_byte(pipe_t *p, char c)
 {
     p->buf[p->tail] = c;
     p->tail = (p->tail + 1) & p->mask;
