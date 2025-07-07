@@ -5,7 +5,7 @@ set -e
 TOOLCHAIN_TYPE=${1:-gnu}
 
 TOOLCHAIN_REPO=https://github.com/riscv-collab/riscv-gnu-toolchain
-TOOLCHAIN_VERSION=2025.07.03
+TOOLCHAIN_VERSION=2025.05.30
 TOOLCHAIN_OS=ubuntu-24.04
 
 setup_gnu_toolchain() {
@@ -28,7 +28,7 @@ setup_gnu_toolchain() {
 setup_llvm_toolchain() {
     echo "[+] Setting up LLVM RISC-V toolchain..."
 
-    # upstream URL for LLVM toolchain
+    # upstream URL for LLVM toolchainzz2
     local URL="${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_VERSION}/riscv32-elf-${TOOLCHAIN_OS}-llvm-nightly-${TOOLCHAIN_VERSION}-nightly.tar.xz"
 
     echo "[+] Downloading RISC-V LLVM toolchain..."
