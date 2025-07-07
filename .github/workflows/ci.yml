@@ -44,13 +44,21 @@ jobs:
         env:
           TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
-      - name: Run Basic Apps
+      - name: Run All Apps
         id: test
         run: |
-          output=$(.ci/run-qemu-tests.sh cpubench )
+          set +e
+          output=$(.ci/run-qemu-tests.sh)
+          test_exit_code=$?
+          set -e
           echo "TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
           echo "$output" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          echo "TEST_EXIT_CODE=$test_exit_code" >> $GITHUB_OUTPUT
+          if [ $test_exit_code -ne 0 ]; then
+            echo "Step 2 validation failed - apps crashed or had exceptions"
+            exit 1
+          fi
         env:
           TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
 
@@ -61,11 +69,17 @@ jobs:
           script: |
             const output = `${{ steps.test.outputs.TEST_OUTPUT }}`;
             const toolchain = `${{ matrix.toolchain }}`.toUpperCase();
+            const exitCode = `${{ steps.test.outputs.TEST_EXIT_CODE }}`;
+            const status = exitCode === '0' ? '✅ PASSED' : '❌ FAILED';
+            const summary = exitCode === '0' ?
+              'All applications finished cleanly or timed out (no exceptions/crashes)' :
+              'Some applications crashed or triggered exceptions';
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Linmo QEMU App Test Result (${toolchain} Toolchain)\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
+              body: `## Linmo App Validation Results (${toolchain} Toolchain)\n\n**Status:** ${status}\n**Summary:** ${summary}\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
             });
 
   # Optional: Create a summary job that depends on all matrix jobs
