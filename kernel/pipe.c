@@ -9,6 +9,8 @@
 #define PIPE_MIN_SIZE 4
 #define PIPE_MAX_SIZE 32768
 
+#define __maybe_unused __attribute__((__unused__))
+
 /* Enhanced validation with comprehensive integrity checks */
 static inline bool pipe_is_valid(const pipe_t *p)
 {
