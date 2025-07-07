@@ -17,14 +17,11 @@ DEFINES := -DF_CPU=$(F_CLK) \
            -DF_TIMER=$(F_TICK) \
            -include config.h
 
-CROSS_COMPILE ?= riscv32-unknown-elf-
-CC_DEFAULT := $(CROSS_COMPILE)gcc
-CC_IS_CLANG := $(shell $(CC_DEFAULT) --version 2>/dev/null | grep -qi clang && echo 1)
 # Architecture flags
 ARCH_FLAGS = -march=rv32imzicsr -mabi=ilp32
 
 # Common compiler flags
-CFLAGS += -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter
+CFLAGS += -Wall -Wextra -Wshadow -Wno-unused-parameter -Werror
 CFLAGS += -O2 -std=gnu99
 CFLAGS += $(ARCH_FLAGS)
 CFLAGS += -mstrict-align -ffreestanding -nostdlib -fomit-frame-pointer
