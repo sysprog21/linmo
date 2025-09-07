@@ -3,6 +3,7 @@
 #include <lib/libc.h>
 #include <sys/task.h>
 #include <types.h>
+#include <spinlock.h>
 
 #include "private/utils.h"
 
@@ -26,6 +27,8 @@ typedef struct __memblock {
 static memblock_t *first_free;
 static void *heap_start, *heap_end;
 static uint32_t free_blocks_count; /* track fragmentation */
+static spinlock_t malloc_lock = SPINLOCK_INITIALIZER;
+static uint32_t malloc_flags = 0;
 
 /* Block manipulation macros */
 #define IS_USED(b) ((b)->size & 1L)
@@ -64,13 +67,13 @@ void free(void *ptr)
     if (!ptr)
         return;
 
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&malloc_lock, &malloc_flags);
 
     memblock_t *p = ((memblock_t *) ptr) - 1;
 
     /* Validate the block being freed */
     if (!validate_block(p) || !IS_USED(p)) {
-        CRITICAL_LEAVE();
+        spin_unlock_irqrestore(&malloc_lock, malloc_flags);
         return; /* Invalid or double-free */
     }
 
@@ -102,7 +105,7 @@ void free(void *ptr)
         free_blocks_count--;
     }
 
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&malloc_lock, malloc_flags);
 }
 
 /* Selective coalescing: only when fragmentation becomes significant */
@@ -138,7 +141,7 @@ void *malloc(uint32_t size)
     if (size < MALLOC_MIN_SIZE)
         size = MALLOC_MIN_SIZE;
 
-    CRITICAL_ENTER();
+    spin_lock_irqsave(&malloc_lock, &malloc_flags);
 
     /* Trigger coalescing only when fragmentation is high */
     if (free_blocks_count > COALESCE_THRESHOLD)
@@ -147,7 +150,7 @@ void *malloc(uint32_t size)
     memblock_t *p = first_free;
     while (p) {
         if (!validate_block(p)) {
-            CRITICAL_LEAVE();
+            spin_unlock_irqrestore(&malloc_lock, malloc_flags);
             return NULL; /* Heap corruption detected */
         }
 
@@ -170,13 +173,13 @@ void *malloc(uint32_t size)
             if (free_blocks_count > 0)
                 free_blocks_count--;
 
-            CRITICAL_LEAVE();
+            spin_unlock_irqrestore(&malloc_lock, malloc_flags);
             return (void *) (p + 1);
         }
         p = p->next;
     }
 
-    CRITICAL_LEAVE();
+    spin_unlock_irqrestore(&malloc_lock, malloc_flags);
     return NULL; /* allocation failed */
 }
 

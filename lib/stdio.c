@@ -7,8 +7,12 @@
 
 #include <lib/libc.h>
 #include <stdarg.h>
+#include <spinlock.h>
 
 #include "private/stdio.h"
+
+static spinlock_t printf_lock = SPINLOCK_INITIALIZER;
+static uint32_t printf_flags = 0;
 
 /* Ignores output character, returns 0 (success). */
 static int stdout_null(int c)
@@ -261,9 +265,11 @@ int32_t printf(const char *fmt, ...)
     va_list args;
     int32_t v;
 
+    spin_lock_irqsave(&printf_lock, &printf_flags);
     va_start(args, fmt);
     v = vsprintf(0, fmt, args);
     va_end(args);
+    spin_unlock_irqrestore(&printf_lock, printf_flags);
     return v;
 }
 

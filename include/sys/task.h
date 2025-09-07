@@ -13,6 +13,7 @@
  */
 
 #include <hal.h>
+#include <spinlock.h>
 #include <lib/list.h>
 #include <lib/queue.h>
 
@@ -84,6 +85,8 @@ typedef struct tcb {
     void *rt_prio; /* Opaque pointer for custom real-time scheduler hook */
 } tcb_t;
 
+#define MAX_HARTS 8
+
 /* Kernel Control Block (KCB)
  *
  * Singleton structure holding global kernel state, including task lists,
@@ -92,7 +95,7 @@ typedef struct tcb {
 typedef struct {
     /* Task Management */
     list_t *tasks; /* Master list of all tasks (nodes contain tcb_t) */
-    list_node_t *task_current; /* Node of currently running task */
+    list_node_t *task_current[MAX_HARTS]; /* Node of currently running task */
     jmp_buf context; /* Saved context of main kernel thread before scheduling */
     uint16_t next_tid;   /* Monotonically increasing ID for next new task */
     uint16_t task_count; /* Cached count of active tasks for quick access */
@@ -104,6 +107,9 @@ typedef struct {
     /* Timer Management */
     list_t *timer_list;      /* List of active software timers */
     volatile uint32_t ticks; /* Global system tick, incremented by timer */
+    /* Timers */
+
+    spinlock_t kcb_lock;
 } kcb_t;
 
 /* Global pointer to the singleton Kernel Control Block */
@@ -117,49 +123,21 @@ extern kcb_t *kcb;
 #define TASK_CACHE_SIZE \
     4 /* Task lookup cache size for frequently accessed tasks */
 
-/* Critical Section Macros
- *
- * Two levels of protection are provided:
- * 1. CRITICAL_* macros disable ALL maskable interrupts globally
- * 2. NOSCHED_* macros disable ONLY the scheduler timer interrupt
- */
-
-/* Disable/enable ALL maskable interrupts globally.
- * Provides strongest protection against concurrency from both other tasks
- * and all ISRs. Use when modifying data shared with any ISR.
- * WARNING: Increases interrupt latency - use NOSCHED macros if protection
- * is only needed against task preemption.
- */
-#define CRITICAL_ENTER()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _di();           \
-    } while (0)
-
-#define CRITICAL_LEAVE()     \
-    do {                     \
-        if (kcb->preemptive) \
-            _ei();           \
-    } while (0)
-
-/* Disable/enable ONLY the scheduler timer interrupt.
- * Lighter-weight critical section that prevents task preemption but allows
- * other hardware interrupts (e.g., UART) to be serviced, minimizing latency.
- * Use when protecting data shared between tasks.
- */
-#define NOSCHED_ENTER()          \
-    do {                         \
-        if (kcb->preemptive)     \
-            hal_timer_disable(); \
-    } while (0)
-
-#define NOSCHED_LEAVE()         \
-    do {                        \
-        if (kcb->preemptive)    \
-            hal_timer_enable(); \
-    } while (0)
-
 /* Core Kernel and Task Management API */
+
+static inline list_node_t *get_task_current()
+{
+    const uint32_t mhartid = read_csr(mhartid);
+
+    return kcb->task_current[mhartid];
+}
+
+static inline void set_task_current(list_node_t *task)
+{
+    const uint32_t mhartid = read_csr(mhartid);
+
+    kcb->task_current[mhartid] = task;
+}
 
 /* System Control Functions */
 
