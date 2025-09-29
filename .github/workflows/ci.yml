@@ -1,0 +1,85 @@
+name: Linmo CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  matrix-tests:
+    runs-on: ubuntu-24.04
+    name: Test on ${{ matrix.toolchain }} toolchain
+
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [gnu, llvm]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install base dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential qemu-system-riscv32 wget
+
+      - name: Setup ${{ matrix.toolchain }} toolchain
+        run: .ci/setup-toolchain.sh ${{ matrix.toolchain }}
+
+      - name: Verify toolchain installation
+        run: |
+          if [ "${{ matrix.toolchain }}" = "gnu" ]; then
+            riscv32-unknown-elf-gcc --version
+          else
+            # LLVM toolchain fallback: try system llvm-objdump
+            riscv32-unknown-elf-clang --version || clang --version
+            riscv32-unknown-elf-llvm-objdump --version || llvm-objdump --version
+          fi
+          qemu-system-riscv32 --version
+
+      - name: Build Kernel
+        run: |
+          make clean
+          make
+        env:
+          TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
+
+      - name: Run Basic Apps
+        id: test
+        run: |
+          output=$(.ci/run-qemu-tests.sh cpubench )
+          echo "TEST_OUTPUT<<EOF" >> $GITHUB_OUTPUT
+          echo "$output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          TOOLCHAIN_TYPE: ${{ matrix.toolchain }}
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `${{ steps.test.outputs.TEST_OUTPUT }}`;
+            const toolchain = `${{ matrix.toolchain }}`.toUpperCase();
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Linmo QEMU App Test Result (${toolchain} Toolchain)\n\n\`\`\`\n${output}\n\`\`\`\n\n_This is an automated report from CI._`
+            });
+
+  # Optional: Create a summary job that depends on all matrix jobs
+  test-summary:
+    runs-on: ubuntu-24.04
+    needs: matrix-tests
+    if: always()
+
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.matrix-tests.result }}" = "success" ]; then
+            echo "✅ All toolchain tests passed!"
+          else
+            echo "❌ Some toolchain tests failed"
+            exit 1
+          fi
