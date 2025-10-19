@@ -784,8 +784,15 @@ int32_t mo_task_suspend(uint16_t id)
         return ERR_TASK_CANT_SUSPEND;
     }
 
+    /* Remove task node from ready queue if task is in ready queue
+     * (TASK_RUNNING/TASK_READY).*/
+    if (task->state == TASK_READY || task->state == TASK_RUNNING) {
+        list_node_t *rq_node = sched_dequeue_task(task);
+        free(rq_node);
+    }
+
     task->state = TASK_SUSPENDED;
-    bool is_current = (kcb->task_current == node);
+    bool is_current = (kcb->task_current->data == task);
 
     CRITICAL_LEAVE();
 
