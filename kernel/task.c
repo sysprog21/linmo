@@ -434,20 +434,16 @@ void sched_tick_current_task(void)
     }
 }
 
-/* Task wakeup - simple state transition approach */
+/* Task wakeup and enqueue into ready queue */
 void sched_wakeup_task(tcb_t *task)
 {
     if (unlikely(!task))
         return;
 
-    /* Mark task as ready - scheduler will find it during round-robin traversal
+    /* Enqueue task into ready queue for scheduler selection by rr_cursor.
      */
-    if (task->state != TASK_READY) {
-        task->state = TASK_READY;
-        /* Ensure task has time slice */
-        if (task->time_slice == 0)
-            task->time_slice = get_priority_timeslice(task->prio_level);
-    }
+    if (task->state != TASK_READY && task->state != TASK_RUNNING)
+        sched_enqueue_task(task);
 }
 
 /* Efficient Round-Robin Task Selection (Cursor-Based, O(1) Complexity)
