@@ -95,8 +95,8 @@ typedef struct sched {
     list_node_t *rr_cursors[TASK_PRIORITY_LEVELS]; /* Round-robin position */
 
     /* Hart-Specific Data */
-    uint8_t hart_id; /* RISC-V hart identifier */
-
+    uint8_t hart_id;        /* RISC-V hart identifier */
+    list_node_t *task_idle; /* Idle task */
 } sched_t;
 
 /* Kernel Control Block (KCB)
@@ -303,3 +303,17 @@ void _sched_block(queue_t *wait_q);
  * Returns 'true' to enable preemptive scheduling, or 'false' for cooperative
  */
 int32_t app_main(void);
+
+/* Initialize the idle task
+ *
+ * This function statically creates and initializes the idle task structure.
+ * It should be called once during system startup.
+ *
+ * The idle task is a permanent system task that runs when no other
+ * ready tasks exist. It is never enqueued into any ready queue and
+ * cannot be suspended, canceled, or priority modified.
+ *
+ * Only one idle task exists per hart. Its priority is fixed to the
+ * lowest level and its time slice is zero.
+ */
+void idle_task_init(void);
