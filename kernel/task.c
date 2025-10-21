@@ -416,6 +416,28 @@ static list_node_t *sched_dequeue_task(tcb_t *task)
     return rq_node;
 }
 
+/* Task migration from origin to new priority ready queue */
+static void sched_migrate_task(tcb_t *task, int16_t priority)
+{
+    if (unlikely(!task || !is_valid_priority(priority)))
+        return;
+
+    if (task->prio == priority)
+        return;
+
+    /* Unlink task node from origin ready queue */
+    list_node_t *rq_node = sched_dequeue_task(task);
+    free(rq_node);
+
+    /* Update new properties */
+    task->prio = priority;
+    task->prio_level = extract_priority_level(priority);
+
+    /* Enqueue into  new priority ready queue*/
+    sched_enqueue_task(task);
+    return;
+}
+
 /* Handle time slice expiration for current task */
 void sched_tick_current_task(void)
 {
