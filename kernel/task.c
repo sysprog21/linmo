@@ -867,12 +867,22 @@ int32_t mo_task_priority(uint16_t id, uint16_t priority)
         return ERR_TASK_NOT_FOUND;
     }
 
+    bool is_current = (kcb->task_current->data == task);
+
+    /* Removed task from ready queue */
+    if (task->state == TASK_RUNNING || task->state == TASK_READY)
+        sched_migrate_task(task, priority);
+
     /* Update priority and level */
     task->prio = priority;
     task->prio_level = extract_priority_level(priority);
     task->time_slice = get_priority_timeslice(task->prio_level);
 
     CRITICAL_LEAVE();
+
+    if (is_current)
+        mo_task_yield();
+
     return ERR_OK;
 }
 
