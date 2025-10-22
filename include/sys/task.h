@@ -128,8 +128,6 @@ typedef struct {
 extern kcb_t *kcb;
 
 /* System Configuration Constants */
-#define SCHED_IMAX \
-    500 /* Safety limit for scheduler iterations to prevent livelock */
 #define MIN_TASK_STACK_SIZE \
     256 /* Minimum stack size to prevent stack overflow */
 #define TASK_CACHE_SIZE \

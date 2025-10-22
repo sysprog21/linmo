@@ -445,20 +445,20 @@ void sched_wakeup_task(tcb_t *task)
     }
 }
 
-/* Efficient Round-Robin Task Selection with O(n) Complexity
+/* Efficient Round-Robin Task Selection (Cursor-Based, O(1) Complexity)
  *
- * Selects the next ready task using circular traversal of the master task list.
+ * Selects the next ready task by advancing the per-priority round-robin
+ * cursor (rr_cursor) circularly using list API list_cnext().
  *
- * Complexity: O(n) where n = number of tasks
- * - Best case: O(1) when next task in sequence is ready
- * - Worst case: O(n) when only one task is ready and it's the last checked
- * - Typical case: O(k) where k << n (number of non-ready tasks to skip)
+ * Complexity: O(1)
+ * - Always constant-time selection, regardless of total task count.
+ * - No need to traverse the task list.
  *
  * Performance characteristics:
- * - Excellent for small-to-medium task counts (< 50 tasks)
- * - Simple and reliable implementation
- * - Good cache locality due to sequential list traversal
- * - Priority-aware time slice allocation
+ * - Ideal for systems with frequent context switches or many tasks.
+ * - Excellent cache locality: only touches nodes in the active ready queue.
+ * - Priority-aware: highest non-empty ready queue is chosen via bitmap lookup.
+ * - Each priority level maintains its own rr_cursor to ensure fair rotation.
  */
 uint16_t sched_select_next_task(void)
 {
@@ -471,31 +471,28 @@ uint16_t sched_select_next_task(void)
     if (current_task->state == TASK_RUNNING)
         current_task->state = TASK_READY;
 
-    /* Round-robin search: find next ready task in the master task list */
-    list_node_t *start_node = kcb->task_current;
-    list_node_t *node = start_node;
-    int iterations = 0; /* Safety counter to prevent infinite loops */
+    /* Check out bitmap */
+    uint32_t bitmap = kcb->harts->ready_bitmap;
+    if (unlikely(!bitmap))
+        panic(ERR_NO_TASKS);
 
-    do {
-        /* Move to next task (circular) */
-        node = list_cnext(kcb->tasks, node);
-        if (!node || !node->data)
-            continue;
+    /* Find top priority ready queue */
+    int top_prio_level = 0;
+    for (; !(bitmap & 1U); top_prio_level++, bitmap >>= 1)
+        ;
 
-        tcb_t *task = node->data;
+    /* Advance top priority rr_cursor to next task node */
+    list_node_t **cursor = &kcb->harts->rr_cursors[top_prio_level];
+    list_t *rq = kcb->harts->ready_queues[top_prio_level];
+    if (unlikely(!rq || !*cursor))
+        panic(ERR_NO_TASKS);
 
-        /* Skip non-ready tasks */
-        if (task->state != TASK_READY)
-            continue;
+    kcb->task_current = *cursor;
+    *cursor = list_cnext(rq, *cursor);
+    ((tcb_t *) (kcb->task_current->data))->state = TASK_RUNNING;
 
-        /* Found a ready task */
-        kcb->task_current = node;
-        task->state = TASK_RUNNING;
-        task->time_slice = get_priority_timeslice(task->prio_level);
-
-        return task->id;
-
-    } while (node != start_node && ++iterations < SCHED_IMAX);
+    if (kcb->task_current)
+        return ((tcb_t *) (kcb->task_current->data))->id;
 
     /* No ready tasks found - this should not happen in normal operation */
     panic(ERR_NO_TASKS);
