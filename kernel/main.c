@@ -23,35 +23,29 @@ int32_t main(void)
     printf("Heap initialized, %u bytes available\n",
            (unsigned int) (size_t) &_heap_size);
 
-    /* Initialize idle task */
+    /* Initialize the first current task as idle sentinel node.
+     * This ensures a valid entry point before any real task runs.
+     */
     idle_task_init();
+    kcb->task_current = kcb->harts->task_idle;
 
     /* Call the application's main entry point to create initial tasks. */
     kcb->preemptive = (bool) app_main();
     printf("Scheduler mode: %s\n",
            kcb->preemptive ? "Preemptive" : "Cooperative");
 
-    /* Verify that the application created at least one task.
-     * If 'kcb->task_current' is still NULL, it means mo_task_spawn was never
-     * successfully called.
-     */
-    if (!kcb->task_current)
-        panic(ERR_NO_TASKS);
-
     /* Save the kernel's context. This is a formality to establish a base
      * execution context before launching the first real task.
      */
     setjmp(kcb->context);
 
-    /* Launch the first task.
-     * 'kcb->task_current' was set by the first call to mo_task_spawn.
-     * This function transfers control and does not return.
+    /* Launch the first task (idle task), then scheduler will select highest
+     * priority task. This function transfers control and does not return.
      */
-    tcb_t *first_task = kcb->task_current->data;
-    if (!first_task)
-        panic(ERR_NO_TASKS);
+    tcb_t *idle = kcb->task_current->data;
+    idle->state = TASK_RUNNING;
 
-    hal_dispatch_init(first_task->context);
+    hal_dispatch_init(idle->context);
 
     /* This line should be unreachable. */
     panic(ERR_UNKNOWN);
