@@ -23,6 +23,9 @@ int32_t main(void)
     printf("Heap initialized, %u bytes available\n",
            (unsigned int) (size_t) &_heap_size);
 
+    /* Initialize idle task */
+    idle_task_init();
+
     /* Call the application's main entry point to create initial tasks. */
     kcb->preemptive = (bool) app_main();
     printf("Scheduler mode: %s\n",
