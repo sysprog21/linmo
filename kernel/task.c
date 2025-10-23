@@ -520,7 +520,7 @@ uint16_t sched_select_next_task(void)
     /* Check out bitmap */
     uint32_t bitmap = kcb->harts->ready_bitmap;
     if (unlikely(!bitmap))
-        panic(ERR_NO_TASKS);
+        return sched_switch_to_idle()->id;
 
     /* Find top priority ready queue */
     int top_prio_level = 0;
