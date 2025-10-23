@@ -706,9 +706,6 @@ void idle_task_init(void)
     printf("idle id %u: entry=%p stack=%p size=%u\n", idle->id, &sched_idle,
            idle->stack, (unsigned int) stack_size);
 
-    if (!kcb->task_current)
-        kcb->task_current = kcb->harts->task_idle;
-
     return;
 }
 
@@ -774,10 +771,6 @@ int32_t mo_task_spawn(void *task_entry, uint16_t stack_size_req)
 
     /* Push node to ready queue */
     sched_enqueue_task(tcb);
-    if (!kcb->task_current) {
-        kcb->task_current = kcb->harts->rr_cursors[tcb->prio_level];
-        tcb->state = TASK_RUNNING;
-    }
 
     CRITICAL_LEAVE();
 
