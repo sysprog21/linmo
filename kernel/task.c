@@ -727,12 +727,17 @@ int32_t mo_task_cancel(uint16_t id)
         }
     }
 
+    /* Remove from ready queue */
+    if (tcb->state == TASK_READY) {
+        list_node_t *rq_node = sched_dequeue_task(tcb);
+        free(rq_node);
+    }
+
     CRITICAL_LEAVE();
 
     /* Free memory outside critical section */
     free(tcb->stack);
     free(tcb);
-    free(node);
     return ERR_OK;
 }
 
