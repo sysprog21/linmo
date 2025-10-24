@@ -82,7 +82,7 @@ static const uint8_t priority_timeslices[TASK_PRIORITY_LEVELS] = {
     TASK_TIMESLICE_IDLE      /* Priority 7: Idle */
 };
 
-/* Mark task as ready (state-based) */
+/* Enqueue task into ready queue */
 static void sched_enqueue_task(tcb_t *task);
 
 /* Utility and Validation Functions */
@@ -349,17 +349,36 @@ void _yield(void) __attribute__((weak, alias("yield")));
  * practical performance with strong guarantees for fairness and reliability.
  */
 
-/* Add task to ready state - simple state-based approach */
+/* Enqueue task into ready queue */
 static void sched_enqueue_task(tcb_t *task)
 {
     if (unlikely(!task))
         return;
 
+    uint8_t prio_level = task->prio_level;
+
     /* Ensure task has appropriate time slice for its priority */
-    task->time_slice = get_priority_timeslice(task->prio_level);
+    task->time_slice = get_priority_timeslice(prio_level);
     task->state = TASK_READY;
 
-    /* Task selection is handled directly through the master task list */
+    list_t **rq = &kcb->harts->ready_queues[prio_level];
+    list_node_t **cursor = &kcb->harts->rr_cursors[prio_level];
+
+    if (!*rq)
+        *rq = list_create();
+
+    list_node_t *rq_node = list_pushback(*rq, task);
+    if (unlikely(!rq_node))
+        return;
+
+    /* Update task count in ready queue */
+    kcb->harts->queue_counts[prio_level]++;
+
+    /* Setup first rr_cursor */
+    if (!*cursor)
+        *cursor = rq_node;
+    BITMAP_SET(task->prio_level);
+    return;
 }
 
 /* Remove task from ready queues - state-based approach for compatibility */
