@@ -824,9 +824,8 @@ int32_t mo_task_resume(uint16_t id)
         CRITICAL_LEAVE();
         return ERR_TASK_CANT_RESUME;
     }
-
-    /* mark as ready - scheduler will find it */
-    task->state = TASK_READY;
+    /* Enqueue resumed task into ready queue */
+    sched_enqueue_task(task);
 
     CRITICAL_LEAVE();
     return ERR_OK;
