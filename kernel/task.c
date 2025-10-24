@@ -386,16 +386,34 @@ static void sched_enqueue_task(tcb_t *task)
     return;
 }
 
-/* Remove task from ready queues - state-based approach for compatibility */
-void sched_dequeue_task(tcb_t *task)
+/* Remove task from ready queue; return removed ready queue node */
+static list_node_t *sched_dequeue_task(tcb_t *task)
 {
     if (unlikely(!task))
-        return;
+        return NULL;
 
-    /* For tasks that need to be removed from ready state (suspended/cancelled),
-     * we rely on the state change. The scheduler will skip non-ready tasks
-     * when it encounters them during the round-robin traversal.
-     */
+    uint8_t prio_level = task->prio_level;
+
+    /* For task that need to be removed from ready/running state, it need be
+     * removed from corresponding ready queue. */
+    list_t *rq = kcb->harts->ready_queues[prio_level];
+    list_node_t *rq_node = list_foreach(rq, idcmp, (void *) (size_t) task->id);
+    list_node_t **cursor = &kcb->harts->rr_cursors[prio_level];
+    if (!rq_node)
+        return NULL;
+
+    /* Safely move cursor to next task node. */
+    if (rq_node == *cursor)
+        *cursor = list_cnext(rq, *cursor);
+
+    list_unlink(rq, rq_node);
+
+    /* Update task count in ready queue */
+    if (!--kcb->harts->queue_counts[prio_level]) {
+        *cursor = NULL;
+        BITMAP_CLEAN(task->prio_level);
+    }
+    return rq_node;
 }
 
 /* Handle time slice expiration for current task */
