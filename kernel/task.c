@@ -540,9 +540,7 @@ uint16_t sched_select_next_task(void)
         return sched_switch_to_idle()->id;
 
     /* Find top priority ready queue */
-    int top_prio_level = 0;
-    for (; !(bitmap & 1U); top_prio_level++, bitmap >>= 1)
-        ;
+    uint8_t top_prio_level = find_highest_ready_priority(bitmap);
 
     list_node_t **cursor = &kcb->harts->rr_cursors[top_prio_level];
     list_t *rq = kcb->harts->ready_queues[top_prio_level];
