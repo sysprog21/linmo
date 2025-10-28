@@ -7,6 +7,7 @@
 
 #include <sys/errno.h>
 #include <sys/logger.h>
+#include <sys/memprot.h>
 #include <sys/mqueue.h>
 #include <sys/mutex.h>
 #include <sys/pipe.h>
