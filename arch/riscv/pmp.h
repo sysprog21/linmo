@@ -7,6 +7,7 @@
 #pragma once
 
 #include <hal.h>
+#include <sys/memprot.h>
 #include <types.h>
 
 /* PMP Region Priority Levels (lower value = higher priority)
@@ -91,3 +92,21 @@ int32_t pmp_check_access(const pmp_config_t *config,
                          uint32_t size,
                          uint8_t is_write,
                          uint8_t is_execute);
+
+/* Memory Pool Management Functions */
+
+/* Initializes PMP regions from an array of memory pool descriptors.
+ * @config : Pointer to PMP configuration state
+ * @pools : Array of memory pool descriptors
+ * @count : Number of pools in the array
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_init_pools(pmp_config_t *config,
+                       const mempool_t *pools,
+                       size_t count);
+
+/* Initializes PMP with default kernel memory pools.
+ * @config : Pointer to PMP configuration state
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_init_kernel(pmp_config_t *config);

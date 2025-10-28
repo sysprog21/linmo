@@ -3,14 +3,16 @@
 #include <types.h>
 
 /* Symbols from the linker script, defining memory boundaries */
-extern uint32_t _gp;    /* Global pointer initialized at reset */
-extern uint32_t _stack; /* Kernel stack top for ISR and boot */
-extern uint32_t _heap_start, _heap_end; /* Start/end of the HEAP memory */
-extern uint32_t _heap_size;             /* Size of HEAP memory */
+extern uint32_t _gp;            /* Global pointer initialized at reset */
+extern uint32_t _stack;         /* Kernel stack top for ISR and boot */
+extern uint32_t _stext, _etext; /* Start/end of the .text section */
 extern uint32_t _sidata;        /* Start address for .data initialization */
 extern uint32_t _sdata, _edata; /* Start/end address for .data section */
 extern uint32_t _sbss, _ebss;   /* Start/end address for .bss section */
 extern uint32_t _end;           /* End of kernel image */
+extern uint32_t _heap_start, _heap_end;    /* Start/end of the HEAP memory */
+extern uint32_t _heap_size;                /* Size of HEAP memory */
+extern uint32_t _stack_bottom, _stack_top; /* Bottom/top of the STACK memory */
 
 /* Read a RISC-V Control and Status Register (CSR).
  * @reg : The symbolic name of the CSR (e.g., mstatus).
