@@ -1,0 +1,93 @@
+/* RISC-V Physical Memory Protection (PMP) Hardware Layer
+ *
+ * Low-level interface to RISC-V PMP using TOR (Top-of-Range) mode for
+ * flexible region management without alignment constraints.
+ */
+
+#pragma once
+
+#include <hal.h>
+#include <types.h>
+
+/* PMP Region Priority Levels (lower value = higher priority)
+ *
+ * Used for eviction decisions when hardware PMP regions are exhausted.
+ */
+typedef enum {
+    PMP_PRIORITY_KERNEL = 0,
+    PMP_PRIORITY_STACK = 1,
+    PMP_PRIORITY_SHARED = 2,
+    PMP_PRIORITY_TEMPORARY = 3,
+    PMP_PRIORITY_COUNT = 4
+} pmp_priority_t;
+
+/* PMP Region Configuration */
+typedef struct {
+    uint32_t addr_start;     /* Start address (inclusive) */
+    uint32_t addr_end;       /* End address (exclusive, written to pmpaddr) */
+    uint8_t permissions;     /* R/W/X bits (PMPCFG_R | PMPCFG_W | PMPCFG_X) */
+    pmp_priority_t priority; /* Eviction priority */
+    uint8_t region_id;       /* Hardware region index (0-15) */
+    uint8_t locked;          /* Lock bit (cannot modify until reset) */
+} pmp_region_t;
+
+/* PMP Global State */
+typedef struct {
+    pmp_region_t regions[PMP_MAX_REGIONS]; /* Shadow of hardware config */
+    uint8_t region_count;                  /* Active region count */
+    uint8_t next_region_idx;               /* Next free region index */
+    uint32_t initialized;                  /* Initialization flag */
+} pmp_config_t;
+
+/* PMP Management Functions */
+
+/* Initializes the PMP hardware and configuration state.
+ * @config : Pointer to pmp_config_t structure to be initialized.
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_init(pmp_config_t *config);
+
+/* Configures a single PMP region in TOR mode.
+ * @config : Pointer to PMP configuration state
+ * @region : Pointer to pmp_region_t structure with desired configuration
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_set_region(pmp_config_t *config, const pmp_region_t *region);
+
+/* Reads the current configuration of a PMP region.
+ * @config : Pointer to PMP configuration state
+ * @region_idx : Index of the region to read (0-15)
+ * @region : Pointer to pmp_region_t to store the result
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_get_region(const pmp_config_t *config,
+                       uint8_t region_idx,
+                       pmp_region_t *region);
+
+/* Disables a PMP region.
+ * @config : Pointer to PMP configuration state
+ * @region_idx : Index of the region to disable (0-15)
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_disable_region(pmp_config_t *config, uint8_t region_idx);
+
+/* Locks a PMP region to prevent further modification.
+ * @config : Pointer to PMP configuration state
+ * @region_idx : Index of the region to lock (0-15)
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_lock_region(pmp_config_t *config, uint8_t region_idx);
+
+/* Verifies that a memory access is allowed by the current PMP configuration.
+ * @config : Pointer to PMP configuration state
+ * @addr : Address to check
+ * @size : Size of the access in bytes
+ * @is_write : 1 for write access, 0 for read access
+ * @is_execute : 1 for execute access, 0 for data access
+ * Returns 1 if access is allowed, 0 if denied, or negative error code.
+ */
+int32_t pmp_check_access(const pmp_config_t *config,
+                         uint32_t addr,
+                         uint32_t size,
+                         uint8_t is_write,
+                         uint8_t is_execute);

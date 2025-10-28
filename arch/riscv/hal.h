@@ -136,3 +136,10 @@ void hal_cpu_idle(void);
 
 /* Default stack size for new tasks if not otherwise specified */
 #define DEFAULT_STACK_SIZE 8192
+
+/* Physical Memory Protection (PMP) region limit constants */
+#define PMP_MAX_REGIONS 16 /* RISC-V supports 16 PMP regions */
+#define PMP_TOR_PAIRS \
+    8 /* In TOR mode, 16 regions = 8 pairs (uses 2 addrs each) */
+#define MIN_PMP_REGION_SIZE \
+    4 /* Minimum addressable size in TOR mode (4 bytes) */
