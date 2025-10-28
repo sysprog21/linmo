@@ -29,6 +29,14 @@ enum {
     ERR_STACK_CHECK,  /* Stack overflow or corruption detected */
     ERR_HEAP_CORRUPT, /* Heap corruption or invalid free detected */
 
+    /* PMP Configuration Errors */
+    ERR_PMP_INVALID_REGION, /* Invalid PMP region parameters */
+    ERR_PMP_NO_REGIONS,     /* No free PMP regions available */
+    ERR_PMP_LOCKED,         /* Region is locked by higher priority */
+    ERR_PMP_SIZE_MISMATCH,  /* Size doesn't meet alignment requirements */
+    ERR_PMP_ADDR_RANGE,     /* Address range is invalid */
+    ERR_PMP_NOT_INIT,       /* PMP not initialized */
+
     /* IPC and Synchronization Errors */
     ERR_PIPE_ALLOC,    /* Pipe allocation failed */
     ERR_PIPE_DEALLOC,  /* Pipe deallocation failed */
