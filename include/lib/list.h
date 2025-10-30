@@ -134,6 +134,25 @@ static inline void *list_remove(list_t *list, list_node_t *target)
     return data;
 }
 
+/* Unlink a node from list without freeing node */
+static inline void list_unlink(list_t *list, list_node_t *target)
+{
+    if (unlikely(!list || !target || list_is_empty(list)))
+        return;
+
+    list_node_t *prev = list->head;
+    while (prev->next != list->tail && prev->next != target)
+        prev = prev->next;
+
+    if (unlikely(prev->next != target))
+        return; /* node not found */
+
+    prev->next = target->next;
+    target->next = NULL;
+    list->length--;
+    return;
+}
+
 /* Iteration */
 
 /* Callback should return non-NULL to stop early, NULL to continue */
