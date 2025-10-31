@@ -113,3 +113,18 @@ int32_t pmp_init_pools(pmp_config_t *config,
  * Returns 0 on success, or negative error code on failure.
  */
 int32_t pmp_init_kernel(pmp_config_t *config);
+
+/* Flexpage Hardware Loading Functions */
+
+/* Loads a flexpage into a PMP hardware region.
+ * @fpage : Pointer to flexpage to load
+ * @region_idx : Hardware PMP region index (0-15)
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_load_fpage(fpage_t *fpage, uint8_t region_idx);
+
+/* Evicts a flexpage from its PMP hardware region.
+ * @fpage : Pointer to flexpage to evict
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t pmp_evict_fpage(fpage_t *fpage);

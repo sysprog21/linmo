@@ -105,3 +105,18 @@ memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared);
  * @mspace : Pointer to memory space to destroy
  */
 void mo_memspace_destroy(memspace_t *mspace);
+
+/* Flexpage Hardware Loading Functions */
+
+/* Loads a flexpage into a hardware region.
+ * @fpage : Pointer to flexpage to load
+ * @region_idx : Hardware region index (0-15)
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t mo_load_fpage(fpage_t *fpage, uint8_t region_idx);
+
+/* Evicts a flexpage from its hardware region.
+ * @fpage : Pointer to flexpage to evict
+ * Returns 0 on success, or negative error code on failure.
+ */
+int32_t mo_evict_fpage(fpage_t *fpage);

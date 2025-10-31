@@ -7,6 +7,7 @@
 
 #include <lib/libc.h>
 #include <lib/malloc.h>
+#include <pmp.h>
 #include <sys/memprot.h>
 
 /* Creates and initializes a flexpage */
@@ -41,6 +42,18 @@ void mo_fpage_destroy(fpage_t *fpage)
         return;
 
     free(fpage);
+}
+
+/* Loads a flexpage into a hardware region */
+int32_t mo_load_fpage(fpage_t *fpage, uint8_t region_idx)
+{
+    return pmp_load_fpage(fpage, region_idx);
+}
+
+/* Evicts a flexpage from its hardware region */
+int32_t mo_evict_fpage(fpage_t *fpage)
+{
+    return pmp_evict_fpage(fpage);
 }
 
 /* Creates and initializes a memory space */

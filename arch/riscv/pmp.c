@@ -4,6 +4,7 @@
  */
 
 #include <hal.h>
+#include <lib/libc.h>
 
 #include "csr.h"
 #include "pmp.h"
@@ -464,4 +465,79 @@ int32_t pmp_check_access(const pmp_config_t *config,
 
     /* Access not covered by any region */
     return 0;
+}
+
+/* Selects victim flexpage for eviction using priority-based algorithm.
+ *
+ * @mspace : Pointer to memory space
+ * Returns pointer to victim flexpage, or NULL if no evictable page found.
+ */
+static fpage_t __attribute__((unused)) * select_victim_fpage(memspace_t *mspace)
+{
+    if (!mspace)
+        return NULL;
+
+    fpage_t *victim = NULL;
+    uint32_t lowest_prio = 0;
+
+    /* Select page with highest priority value (lowest priority).
+     * Kernel regions (priority 0) are never selected. */
+    for (fpage_t *fp = mspace->pmp_first; fp; fp = fp->pmp_next) {
+        if (fp->priority > lowest_prio) {
+            victim = fp;
+            lowest_prio = fp->priority;
+        }
+    }
+
+    return victim;
+}
+
+/* Loads a flexpage into a PMP hardware region */
+int32_t pmp_load_fpage(fpage_t *fpage, uint8_t region_idx)
+{
+    if (!fpage)
+        return -1;
+
+    pmp_config_t *config = pmp_get_config();
+    if (!config)
+        return -1;
+
+    /* Configure PMP region from flexpage attributes */
+    pmp_region_t region = {
+        .addr_start = fpage->base,
+        .addr_end = fpage->base + fpage->size,
+        .permissions = fpage->rwx,
+        .priority = fpage->priority,
+        .region_id = region_idx,
+        .locked = 0,
+    };
+
+    int32_t ret = pmp_set_region(config, &region);
+    if (ret == 0) {
+        fpage->pmp_id = region_idx;
+    }
+
+    return ret;
+}
+
+/* Evicts a flexpage from its PMP hardware region */
+int32_t pmp_evict_fpage(fpage_t *fpage)
+{
+    if (!fpage)
+        return -1;
+
+    /* Only evict if actually loaded into PMP */
+    if (fpage->pmp_id == 0)
+        return 0;
+
+    pmp_config_t *config = pmp_get_config();
+    if (!config)
+        return -1;
+
+    int32_t ret = pmp_disable_region(config, fpage->pmp_id);
+    if (ret == 0) {
+        fpage->pmp_id = 0;
+    }
+
+    return ret;
 }
