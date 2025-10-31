@@ -6,10 +6,8 @@
 
 #pragma once
 
+#include <sys/memprot.h>
 #include <types.h>
-
-/* Forward declaration */
-typedef struct mempool mempool_t;
 
 /* PMP Region Priority Levels (lower value = higher priority)
  *
@@ -42,6 +40,9 @@ typedef struct {
 } pmp_config_t;
 
 /* PMP Management Functions */
+
+/* Returns pointer to global PMP configuration */
+pmp_config_t *pmp_get_config(void);
 
 /* Initializes the PMP hardware and configuration state.
  * @config : Pointer to pmp_config_t structure to be initialized.
