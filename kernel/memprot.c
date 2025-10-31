@@ -7,6 +7,7 @@
 
 #include <lib/libc.h>
 #include <lib/malloc.h>
+#include <pmp.h>
 #include <sys/memprot.h>
 
 /* Creates and initializes a flexpage */
@@ -39,4 +40,29 @@ void mo_fpage_destroy(fpage_t *fpage)
         return;
 
     free(fpage);
+}
+
+/* Selects victim flexpage for eviction using priority-based algorithm.
+ *
+ * @mspace : Pointer to memory space
+ * Returns pointer to victim flexpage, or NULL if no evictable page found.
+ */
+fpage_t *select_victim_fpage(memspace_t *mspace)
+{
+    if (!mspace)
+        return NULL;
+
+    fpage_t *victim = NULL;
+    uint32_t lowest_prio = 0;
+
+    /* Select page with highest priority value (lowest priority).
+     * Kernel regions (priority 0) are never selected. */
+    for (fpage_t *fp = mspace->pmp_first; fp; fp = fp->pmp_next) {
+        if (fp->priority > lowest_prio) {
+            victim = fp;
+            lowest_prio = fp->priority;
+        }
+    }
+
+    return victim;
 }
