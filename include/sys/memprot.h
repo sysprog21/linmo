@@ -72,3 +72,22 @@ typedef struct {
 #define DECLARE_MEMPOOL_FROM_SYMBOLS(name_, sym_base_, flags_, tag_)   \
     DECLARE_MEMPOOL((name_), &(sym_base_##_start), &(sym_base_##_end), \
                     (flags_), (tag_))
+
+/* Flexpage Management Functions */
+
+/* Creates and initializes a new flexpage.
+ * @base : Physical base address
+ * @size : Size in bytes
+ * @rwx : Permission bits
+ * @priority : Eviction priority
+ * Returns pointer to created flexpage, or NULL on failure.
+ */
+fpage_t *mo_fpage_create(uint32_t base,
+                         uint32_t size,
+                         uint32_t rwx,
+                         uint32_t priority);
+
+/* Destroys a flexpage.
+ * @fpage : Pointer to flexpage to destroy
+ */
+void mo_fpage_destroy(fpage_t *fpage);

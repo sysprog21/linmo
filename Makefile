@@ -17,7 +17,7 @@ include arch/$(ARCH)/build.mk
 INC_DIRS += -I $(SRC_DIR)/include \
             -I $(SRC_DIR)/include/lib
 
-KERNEL_OBJS := timer.o mqueue.o pipe.o semaphore.o mutex.o logger.o error.o syscall.o task.o main.o
+KERNEL_OBJS := timer.o mqueue.o pipe.o semaphore.o mutex.o logger.o error.o syscall.o task.o memprot.o main.o
 KERNEL_OBJS := $(addprefix $(BUILD_KERNEL_DIR)/,$(KERNEL_OBJS))
 deps += $(KERNEL_OBJS:%.o=%.o.d)
 
