@@ -30,6 +30,25 @@ extern uint32_t _stack_bottom, _stack_top; /* Bottom/top of the STACK memory */
  */
 #define write_csr(reg, val) ({ asm volatile("csrw " #reg ", %0" ::"rK"(val)); })
 
+/* Read CSR by numeric address (for dynamic register selection).
+ * Used when CSR number is not known at compile-time (e.g., PMP registers).
+ * @csr_num : CSR address as a compile-time constant.
+ */
+#define read_csr_num(csr_num)                                     \
+    ({                                                            \
+        uint32_t __tmp;                                           \
+        asm volatile("csrr %0, %1" : "=r"(__tmp) : "i"(csr_num)); \
+        __tmp;                                                    \
+    })
+
+/* Write CSR by numeric address (for dynamic register selection).
+ * Used when CSR number is not known at compile-time (e.g., PMP registers).
+ * @csr_num : CSR address as a compile-time constant.
+ * @val : The 32-bit value to write.
+ */
+#define write_csr_num(csr_num, val) \
+    ({ asm volatile("csrw %0, %1" ::"i"(csr_num), "rK"(val)); })
+
 /* Globally enable or disable machine-level interrupts by setting mstatus.MIE.
  * @enable : Non-zero to enable, zero to disable.
  * Returns the previous state of the interrupt enable bit (1 if enabled, 0 if

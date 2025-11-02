@@ -70,7 +70,7 @@ LDFLAGS += --gc-sections
 ARFLAGS = r
 LDSCRIPT = $(ARCH_DIR)/riscv32-qemu.ld
 
-HAL_OBJS := boot.o hal.o muldiv.o
+HAL_OBJS := boot.o hal.o muldiv.o pmp.o
 HAL_OBJS := $(addprefix $(BUILD_KERNEL_DIR)/,$(HAL_OBJS))
 deps += $(HAL_OBJS:%.o=%.o.d)
 
