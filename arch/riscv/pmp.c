@@ -320,3 +320,27 @@ int32_t pmp_lock_region(pmp_config_t *config, uint8_t region_idx)
 
     return ERR_OK;
 }
+
+int32_t pmp_get_region(const pmp_config_t *config, uint8_t region_idx,
+                       pmp_region_t *region)
+{
+    if (!config || !region)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read the address and configuration from shadow configuration */
+    region->addr_start = config->regions[region_idx].addr_start;
+    region->addr_end = config->regions[region_idx].addr_end;
+    region->permissions = config->regions[region_idx].permissions;
+    region->priority = config->regions[region_idx].priority;
+    region->region_id = region_idx;
+    region->locked = config->regions[region_idx].locked;
+
+    return ERR_OK;
+}
