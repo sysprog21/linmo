@@ -195,6 +195,32 @@ pmp_config_t *pmp_get_config(void)
     return &pmp_global_config;
 }
 
+int32_t pmp_init(pmp_config_t *config)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Clear all PMP regions in hardware and shadow configuration */
+    for (uint8_t i = 0; i < PMP_MAX_REGIONS; i++) {
+        write_pmpaddr(i, 0);
+        if (i % 4 == 0)
+            write_pmpcfg(i / 4, 0);
+
+        config->regions[i].addr_start = 0;
+        config->regions[i].addr_end = 0;
+        config->regions[i].permissions = 0;
+        config->regions[i].priority = PMP_PRIORITY_TEMPORARY;
+        config->regions[i].region_id = i;
+        config->regions[i].locked = 0;
+    }
+
+    config->region_count = 0;
+    config->next_region_idx = 0;
+    config->initialized = 1;
+
+    return ERR_OK;
+}
+
 int32_t pmp_init_pools(pmp_config_t *config,
                        const mempool_t *pools,
                        size_t count)
