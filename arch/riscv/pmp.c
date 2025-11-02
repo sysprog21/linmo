@@ -331,3 +331,72 @@ int32_t pmp_set_region(pmp_config_t *config, const pmp_region_t *region)
 
     return ERR_OK;
 }
+
+int32_t pmp_disable_region(pmp_config_t *config, uint8_t region_idx)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Check if region is already locked */
+    if (config->regions[region_idx].locked)
+        return ERR_PMP_LOCKED;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Clear the configuration byte for this region (disables it) */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].addr_start = 0;
+    config->regions[region_idx].addr_end = 0;
+    config->regions[region_idx].permissions = 0;
+
+    return ERR_OK;
+}
+
+int32_t pmp_lock_region(pmp_config_t *config, uint8_t region_idx)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Get current configuration byte for this region */
+    uint8_t pmpcfg_byte = (pmpcfg_val >> pmpcfg_offset) & 0xFFU;
+
+    /* Set lock bit */
+    pmpcfg_byte |= PMPCFG_L;
+
+    /* Clear the configuration byte for this region */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write new configuration byte with lock bit set */
+    pmpcfg_val |= (pmpcfg_byte << pmpcfg_offset);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].locked = 1;
+
+    return ERR_OK;
+}
