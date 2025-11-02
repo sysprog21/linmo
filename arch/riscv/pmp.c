@@ -190,11 +190,45 @@ static const mempool_t kernel_mempools[] = {
 /* Global PMP configuration (shadow of hardware state) */
 static pmp_config_t pmp_global_config;
 
+/* Helper to compute pmpcfg register index and bit offset for a given region */
+static inline void pmp_get_cfg_indices(uint8_t region_idx,
+                                       uint8_t *cfg_idx,
+                                       uint8_t *cfg_offset)
+{
+    *cfg_idx = region_idx / 4;
+    *cfg_offset = (region_idx % 4) * 8;
+}
+
 pmp_config_t *pmp_get_config(void)
 {
     return &pmp_global_config;
 }
 
+int32_t pmp_init(pmp_config_t *config)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Clear all PMP regions in hardware and shadow configuration */
+    for (uint8_t i = 0; i < PMP_MAX_REGIONS; i++) {
+        write_pmpaddr(i, 0);
+        if (i % 4 == 0)
+            write_pmpcfg(i / 4, 0);
+
+        config->regions[i].addr_start = 0;
+        config->regions[i].addr_end = 0;
+        config->regions[i].permissions = 0;
+        config->regions[i].priority = PMP_PRIORITY_TEMPORARY;
+        config->regions[i].region_id = i;
+        config->regions[i].locked = 0;
+    }
+
+    config->region_count = 0;
+    config->next_region_idx = 0;
+    config->initialized = 1;
+
+    return ERR_OK;
+}
 int32_t pmp_init_pools(pmp_config_t *config,
                        const mempool_t *pools,
                        size_t count)
@@ -237,4 +271,197 @@ int32_t pmp_init_pools(pmp_config_t *config,
 int32_t pmp_init_kernel(pmp_config_t *config)
 {
     return pmp_init_pools(config, kernel_mempools, KERNEL_MEMPOOL_COUNT);
+}
+
+int32_t pmp_set_region(pmp_config_t *config, const pmp_region_t *region)
+{
+    if (!config || !region)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region->region_id >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate address range */
+    if (region->addr_start >= region->addr_end)
+        return ERR_PMP_ADDR_RANGE;
+
+    /* Check if region is already locked */
+    if (config->regions[region->region_id].locked)
+        return ERR_PMP_LOCKED;
+
+    uint8_t region_idx = region->region_id;
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Build configuration byte with TOR mode and permissions */
+    uint8_t pmpcfg_perm =
+        region->permissions & (PMPCFG_R | PMPCFG_W | PMPCFG_X);
+    uint8_t pmpcfg_byte = PMPCFG_A_TOR | pmpcfg_perm;
+    if (region->locked)
+        pmpcfg_byte |= PMPCFG_L;
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Clear the configuration byte for this region */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write new configuration byte */
+    pmpcfg_val |= (pmpcfg_byte << pmpcfg_offset);
+
+    /* Write pmpaddr register with the upper boundary */
+    write_pmpaddr(region_idx, region->addr_end);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].addr_start = region->addr_start;
+    config->regions[region_idx].addr_end = region->addr_end;
+    config->regions[region_idx].permissions = region->permissions;
+    config->regions[region_idx].priority = region->priority;
+    config->regions[region_idx].region_id = region_idx;
+    config->regions[region_idx].locked = region->locked;
+
+    /* Update region count if this is a newly used region */
+    if (region_idx >= config->region_count)
+        config->region_count = region_idx + 1;
+
+    return ERR_OK;
+}
+
+int32_t pmp_disable_region(pmp_config_t *config, uint8_t region_idx)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Check if region is already locked */
+    if (config->regions[region_idx].locked)
+        return ERR_PMP_LOCKED;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Clear the configuration byte for this region (disables it) */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].addr_start = 0;
+    config->regions[region_idx].addr_end = 0;
+    config->regions[region_idx].permissions = 0;
+
+    return ERR_OK;
+}
+
+int32_t pmp_lock_region(pmp_config_t *config, uint8_t region_idx)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Get current configuration byte for this region */
+    uint8_t pmpcfg_byte = (pmpcfg_val >> pmpcfg_offset) & 0xFFU;
+
+    /* Set lock bit */
+    pmpcfg_byte |= PMPCFG_L;
+
+    /* Clear the configuration byte for this region */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write new configuration byte with lock bit set */
+    pmpcfg_val |= (pmpcfg_byte << pmpcfg_offset);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].locked = 1;
+
+    return ERR_OK;
+}
+
+int32_t pmp_get_region(const pmp_config_t *config,
+                       uint8_t region_idx,
+                       pmp_region_t *region)
+{
+    if (!config || !region)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region_idx >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
+
+    /* Read the address and configuration from shadow configuration */
+    region->addr_start = config->regions[region_idx].addr_start;
+    region->addr_end = config->regions[region_idx].addr_end;
+    region->permissions = config->regions[region_idx].permissions;
+    region->priority = config->regions[region_idx].priority;
+    region->region_id = region_idx;
+    region->locked = config->regions[region_idx].locked;
+
+    return ERR_OK;
+}
+
+int32_t pmp_check_access(const pmp_config_t *config,
+                         uint32_t addr,
+                         uint32_t size,
+                         uint8_t is_write,
+                         uint8_t is_execute)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    uint32_t access_end = addr + size;
+
+    /* In TOR mode, check all regions in priority order */
+    for (uint8_t i = 0; i < config->region_count; i++) {
+        const pmp_region_t *region = &config->regions[i];
+
+        /* Skip disabled regions */
+        if (region->addr_start == 0 && region->addr_end == 0)
+            continue;
+
+        /* Check if access falls within this region */
+        if (addr >= region->addr_start && access_end <= region->addr_end) {
+            /* Verify permissions match access type */
+            uint8_t required_perm = 0;
+            if (is_write)
+                required_perm |= PMPCFG_W;
+            if (is_execute)
+                required_perm |= PMPCFG_X;
+            if (!is_write && !is_execute)
+                required_perm = PMPCFG_R;
+
+            if ((region->permissions & required_perm) == required_perm)
+                return 1; /* Access allowed */
+            else
+                return 0; /* Access denied */
+        }
+    }
+
+    /* Access not covered by any region */
+    return 0;
 }
