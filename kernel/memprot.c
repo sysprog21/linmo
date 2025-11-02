@@ -42,3 +42,36 @@ void mo_fpage_destroy(fpage_t *fpage)
 
     free(fpage);
 }
+
+/* Creates and initializes a memory space */
+memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared)
+{
+    memspace_t *mspace = malloc(sizeof(memspace_t));
+    if (!mspace)
+        return NULL;
+
+    mspace->as_id = as_id;
+    mspace->first = NULL;
+    mspace->pmp_first = NULL;
+    mspace->pmp_stack = NULL;
+    mspace->shared = shared;
+
+    return mspace;
+}
+
+/* Destroys a memory space and all its flexpages */
+void mo_memspace_destroy(memspace_t *mspace)
+{
+    if (!mspace)
+        return;
+
+    /* Free all flexpages in the list */
+    fpage_t *fp = mspace->first;
+    while (fp) {
+        fpage_t *next = fp->as_next;
+        mo_fpage_destroy(fp);
+        fp = next;
+    }
+
+    free(mspace);
+}

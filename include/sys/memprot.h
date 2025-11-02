@@ -91,3 +91,17 @@ fpage_t *mo_fpage_create(uint32_t base,
  * @fpage : Pointer to flexpage to destroy
  */
 void mo_fpage_destroy(fpage_t *fpage);
+
+/* Memory Space Management Functions */
+
+/* Creates and initializes a memory space.
+ * @as_id : Memory space identifier
+ * @shared : Whether this space can be shared across tasks
+ * Returns pointer to created memory space, or NULL on failure.
+ */
+memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared);
+
+/* Destroys a memory space and all its flexpages.
+ * @mspace : Pointer to memory space to destroy
+ */
+void mo_memspace_destroy(memspace_t *mspace);
