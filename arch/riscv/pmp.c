@@ -186,3 +186,60 @@ int32_t pmp_init_kernel(pmp_config_t *config)
 {
     return pmp_init_pools(config, kernel_mempools, KERNEL_MEMPOOL_COUNT);
 }
+
+int32_t pmp_set_region(pmp_config_t *config, const pmp_region_t *region)
+{
+    if (!config || !region)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate region index is within bounds */
+    if (region->region_id >= PMP_MAX_REGIONS)
+        return ERR_PMP_INVALID_REGION;
+
+    /* Validate address range */
+    if (region->addr_start >= region->addr_end)
+        return ERR_PMP_ADDR_RANGE;
+
+    /* Check if region is already locked */
+    if (config->regions[region->region_id].locked)
+        return ERR_PMP_LOCKED;
+
+    uint8_t region_idx = region->region_id;
+    uint8_t pmpcfg_idx = region_idx / 4;
+    uint8_t pmpcfg_offset = (region_idx % 4) * 8;
+
+    /* Build configuration byte with TOR mode and permissions */
+    uint8_t pmpcfg_perm = region->permissions & (PMPCFG_R | PMPCFG_W | PMPCFG_X);
+    uint8_t pmpcfg_byte = PMPCFG_A_TOR | pmpcfg_perm;
+    if (region->locked)
+        pmpcfg_byte |= PMPCFG_L;
+
+    /* Read current pmpcfg register to preserve other regions */
+    uint32_t pmpcfg_val = read_pmpcfg(pmpcfg_idx);
+
+    /* Clear the configuration byte for this region */
+    pmpcfg_val &= ~(0xFFU << pmpcfg_offset);
+
+    /* Write new configuration byte */
+    pmpcfg_val |= (pmpcfg_byte << pmpcfg_offset);
+
+    /* Write pmpaddr register with the upper boundary */
+    write_pmpaddr(region_idx, region->addr_end);
+
+    /* Write pmpcfg register with updated configuration */
+    write_pmpcfg(pmpcfg_idx, pmpcfg_val);
+
+    /* Update shadow configuration */
+    config->regions[region_idx].addr_start = region->addr_start;
+    config->regions[region_idx].addr_end = region->addr_end;
+    config->regions[region_idx].permissions = region->permissions;
+    config->regions[region_idx].priority = region->priority;
+    config->regions[region_idx].region_id = region_idx;
+    config->regions[region_idx].locked = region->locked;
+
+    /* Update region count if this is a newly used region */
+    if (region_idx >= config->region_count)
+        config->region_count = region_idx + 1;
+
+    return ERR_OK;
+}
