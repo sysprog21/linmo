@@ -190,6 +190,15 @@ static const mempool_t kernel_mempools[] = {
 /* Global PMP configuration (shadow of hardware state) */
 static pmp_config_t pmp_global_config;
 
+/* Helper to compute pmpcfg register index and bit offset for a given region */
+static inline void pmp_get_cfg_indices(uint8_t region_idx,
+                                       uint8_t *cfg_idx,
+                                       uint8_t *cfg_offset)
+{
+    *cfg_idx = region_idx / 4;
+    *cfg_offset = (region_idx % 4) * 8;
+}
+
 pmp_config_t *pmp_get_config(void)
 {
     return &pmp_global_config;
@@ -283,8 +292,8 @@ int32_t pmp_set_region(pmp_config_t *config, const pmp_region_t *region)
         return ERR_PMP_LOCKED;
 
     uint8_t region_idx = region->region_id;
-    uint8_t pmpcfg_idx = region_idx / 4;
-    uint8_t pmpcfg_offset = (region_idx % 4) * 8;
+    uint8_t pmpcfg_idx, pmpcfg_offset;
+    pmp_get_cfg_indices(region_idx, &pmpcfg_idx, &pmpcfg_offset);
 
     /* Build configuration byte with TOR mode and permissions */
     uint8_t pmpcfg_perm =
