@@ -42,8 +42,13 @@ static void write_pmpcfg(uint8_t idx, uint32_t val)
     }
 }
 
-/* Read PMP address register by index (0-15) */
-static uint32_t read_pmpaddr(uint8_t idx)
+/* Read PMP address register by index (0-15)
+ *
+ * Currently unused as the implementation maintains shadow state in memory
+ * rather than reading hardware registers. Provided for API completeness
+ * and potential future use cases requiring hardware state verification.
+ */
+static uint32_t __attribute__((unused)) read_pmpaddr(uint8_t idx)
 {
     switch (idx) {
     case 0: return read_csr_num(CSR_PMPADDR0);
@@ -343,4 +348,42 @@ int32_t pmp_get_region(const pmp_config_t *config, uint8_t region_idx,
     region->locked = config->regions[region_idx].locked;
 
     return ERR_OK;
+}
+
+int32_t pmp_check_access(const pmp_config_t *config, uint32_t addr,
+                         uint32_t size, uint8_t is_write, uint8_t is_execute)
+{
+    if (!config)
+        return ERR_PMP_INVALID_REGION;
+
+    uint32_t access_end = addr + size;
+
+    /* In TOR mode, check all regions in priority order */
+    for (uint8_t i = 0; i < config->region_count; i++) {
+        const pmp_region_t *region = &config->regions[i];
+
+        /* Skip disabled regions */
+        if (region->addr_start == 0 && region->addr_end == 0)
+            continue;
+
+        /* Check if access falls within this region */
+        if (addr >= region->addr_start && access_end <= region->addr_end) {
+            /* Verify permissions match access type */
+            uint8_t required_perm = 0;
+            if (is_write)
+                required_perm |= PMPCFG_W;
+            if (is_execute)
+                required_perm |= PMPCFG_X;
+            if (!is_write && !is_execute)
+                required_perm = PMPCFG_R;
+
+            if ((region->permissions & required_perm) == required_perm)
+                return 1; /* Access allowed */
+            else
+                return 0; /* Access denied */
+        }
+    }
+
+    /* Access not covered by any region */
+    return 0;
 }
