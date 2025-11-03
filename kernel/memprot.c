@@ -42,11 +42,7 @@ void mo_fpage_destroy(fpage_t *fpage)
     free(fpage);
 }
 
-/* Selects victim flexpage for eviction using priority-based algorithm.
- *
- * @mspace : Pointer to memory space
- * Returns pointer to victim flexpage, or NULL if no evictable page found.
- */
+/* Selects victim flexpage for eviction using priority-based algorithm */
 fpage_t *select_victim_fpage(memspace_t *mspace)
 {
     if (!mspace)
@@ -67,12 +63,7 @@ fpage_t *select_victim_fpage(memspace_t *mspace)
     return victim;
 }
 
-/* Loads a flexpage into a PMP hardware region.
- *
- * @fpage : Pointer to flexpage to load
- * @region_idx : Hardware PMP region index (0-15)
- * Returns 0 on success, or negative error code on failure.
- */
+/* Loads a flexpage into a PMP hardware region */
 int32_t pmp_load_fpage(fpage_t *fpage, uint8_t region_idx)
 {
     if (!fpage)
@@ -100,11 +91,7 @@ int32_t pmp_load_fpage(fpage_t *fpage, uint8_t region_idx)
     return ret;
 }
 
-/* Evicts a flexpage from its PMP hardware region.
- *
- * @fpage : Pointer to flexpage to evict
- * Returns 0 on success, or negative error code on failure.
- */
+/* Evicts a flexpage from its PMP hardware region */
 int32_t pmp_evict_fpage(fpage_t *fpage)
 {
     if (!fpage)
@@ -126,12 +113,7 @@ int32_t pmp_evict_fpage(fpage_t *fpage)
     return ret;
 }
 
-/* Creates and initializes a memory space.
- *
- * @as_id : Memory space identifier
- * @shared : Whether this space can be shared across tasks
- * Returns pointer to created memory space, or NULL on failure.
- */
+/* Creates and initializes a memory space */
 memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared)
 {
     memspace_t *mspace = malloc(sizeof(memspace_t));
@@ -147,10 +129,7 @@ memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared)
     return mspace;
 }
 
-/* Destroys a memory space and all its flexpages.
- *
- * @mspace : Pointer to memory space to destroy
- */
+/* Destroys a memory space and all its flexpages */
 void mo_memspace_destroy(memspace_t *mspace)
 {
     if (!mspace)
