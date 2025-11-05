@@ -1055,6 +1055,8 @@ void _sched_block(queue_t *wait_q)
 
     tcb_t *self = kcb->task_current->data;
 
+    sched_dequeue_task(self);
+
     if (queue_enqueue(wait_q, self) != 0)
         panic(ERR_SEM_OPERATION);
 
