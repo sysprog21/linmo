@@ -317,3 +317,6 @@ int32_t app_main(void);
  * lowest level and its time slice is zero.
  */
 void idle_task_init(void);
+
+/* Wake up and enqueue task into ready queue */
+void sched_wakeup_task(tcb_t *);
