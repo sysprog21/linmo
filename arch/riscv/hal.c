@@ -233,6 +233,12 @@ static void uart_init(uint32_t baud)
 void hal_hardware_init(void)
 {
     uart_init(USART_BAUD);
+
+    /* Initialize PMP hardware with kernel memory regions */
+    pmp_config_t *pmp_config = pmp_get_config();
+    if (pmp_init_kernel(pmp_config) != 0)
+        hal_panic();
+
     /* Set the first timer interrupt. Subsequent interrupts are set in ISR */
     mtimecmp_w(mtime_r() + (F_CPU / F_TIMER));
     /* Install low-level I/O handlers for the C standard library */
