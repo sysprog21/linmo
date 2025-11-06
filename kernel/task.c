@@ -868,11 +868,13 @@ void mo_task_delay(uint16_t ticks)
 
     tcb_t *self = kcb->task_current->data;
 
-    /* Set delay and blocked state - scheduler will skip blocked tasks */
+    /* Set delay and blocked state, dequeue from ready queue */
+    list_node_t *rq_node = sched_dequeue_task(self);
     self->delay = ticks;
     self->state = TASK_BLOCKED;
     NOSCHED_LEAVE();
 
+    free(rq_node);
     mo_task_yield();
 }
 
