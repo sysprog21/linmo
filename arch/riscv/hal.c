@@ -275,27 +275,18 @@ static void uart_init(uint32_t baud)
 void hal_hardware_init(void)
 {
     uart_init(USART_BAUD);
+
+    /* Initialize PMP hardware with kernel memory regions */
+    pmp_config_t *pmp_config = pmp_get_config();
+    if (pmp_init_kernel(pmp_config) != 0)
+        hal_panic();
+
     /* Set the first timer interrupt. Subsequent interrupts are set in ISR */
     mtimecmp_w(mtime_r() + (F_CPU / F_TIMER));
     /* Install low-level I/O handlers for the C standard library */
     _stdout_install(__putchar);
     _stdin_install(__getchar);
     _stdpoll_install(__kbhit);
-
-    /* Grant U-mode access to all memory for validation purposes.
-     * By default, RISC-V PMP denies all access to U-mode, which would cause
-     * instruction access faults immediately upon task switch. This minimal
-     * setup allows U-mode tasks to execute and serves as a placeholder until
-     * the full PMP driver is integrated.
-     */
-    uint32_t pmpaddr = -1UL; /* Cover entire address space */
-    uint8_t pmpcfg = 0x0F;   /* TOR, R, W, X enabled */
-
-    asm volatile(
-        "csrw pmpaddr0, %0\n"
-        "csrw pmpcfg0, %1\n"
-        :
-        : "r"(pmpaddr), "r"(pmpcfg));
 }
 
 /* Halts the system in an unrecoverable state */
