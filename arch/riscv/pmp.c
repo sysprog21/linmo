@@ -580,3 +580,39 @@ int32_t pmp_handle_access_fault(uint32_t fault_addr, uint8_t is_write)
     int32_t ret = pmp_evict_fpage(victim);
     return (ret == 0) ? pmp_load_fpage(target_fpage, victim->pmp_id) : ret;
 }
+
+int32_t pmp_switch_context(memspace_t *old_mspace, memspace_t *new_mspace)
+{
+    if (old_mspace == new_mspace)
+        return 0;
+
+    pmp_config_t *config = pmp_get_config();
+    if (!config)
+        return -1;
+
+    /* Evict old task's dynamic regions */
+    if (old_mspace) {
+        for (fpage_t *fp = old_mspace->pmp_first; fp; fp = fp->pmp_next) {
+            uint8_t region_id = fp->pmp_id;
+            if (region_id != 0 && !config->regions[region_id].locked) {
+                pmp_disable_region(config, region_id);
+                fp->pmp_id = 0;
+            }
+        }
+    }
+
+    /* Load new task's regions into available slots */
+    if (new_mspace) {
+        uint8_t available_slots = PMP_MAX_REGIONS - config->region_count;
+        uint8_t loaded_count = 0;
+
+        for (fpage_t *fp = new_mspace->first;
+             fp && loaded_count < available_slots; fp = fp->as_next) {
+            uint8_t region_idx = config->region_count + loaded_count;
+            if (pmp_load_fpage(fp, region_idx) == 0)
+                loaded_count++;
+        }
+    }
+
+    return 0;
+}

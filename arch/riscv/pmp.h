@@ -10,6 +10,8 @@
 #include <sys/memprot.h>
 #include <types.h>
 
+#include "csr.h"
+
 /* PMP Region Priority Levels (lower value = higher priority)
  *
  * Used for eviction decisions when hardware PMP regions are exhausted.
@@ -140,3 +142,15 @@ int32_t pmp_evict_fpage(fpage_t *fpage);
  * Returns 0 on successful recovery, negative error code on failure.
  */
 int32_t pmp_handle_access_fault(uint32_t fault_addr, uint8_t is_write);
+
+/* Switches PMP configuration during task context switch.
+ *
+ * Evicts the old task's dynamic regions from hardware and loads the new
+ * task's regions into available PMP slots. Kernel regions marked as locked
+ * are preserved across all context switches.
+ *
+ * @old_mspace : Memory space of task being switched out (can be NULL)
+ * @new_mspace : Memory space of task being switched in (can be NULL)
+ * Returns 0 on success, negative error code on failure.
+ */
+int32_t pmp_switch_context(memspace_t *old_mspace, memspace_t *new_mspace);
