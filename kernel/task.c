@@ -7,6 +7,7 @@
 
 #include <hal.h>
 #include <lib/queue.h>
+#include <pmp.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -495,11 +496,18 @@ void dispatch(void)
     uint32_t ready_count = 0;
     list_foreach(kcb->tasks, delay_update_batch, &ready_count);
 
+    /* Save old task before scheduler modifies task_current */
+    memspace_t *old_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+
     /* Hook for real-time scheduler - if it selects a task, use it */
     if (kcb->rt_sched() < 0)
         sched_select_next_task(); /* Use O(1) priority scheduler */
 
     hal_interrupt_tick();
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    memspace_t *new_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+    pmp_switch_context(old_mspace, new_mspace);
 
     /* Restore next task context */
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
@@ -526,7 +534,15 @@ void yield(void)
     if (!kcb->preemptive)
         list_foreach(kcb->tasks, delay_update, NULL);
 
+    /* Save old task before scheduler modifies task_current */
+    memspace_t *old_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+
     sched_select_next_task(); /* Use O(1) priority scheduler */
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    memspace_t *new_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+    pmp_switch_context(old_mspace, new_mspace);
+
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
 }
 
