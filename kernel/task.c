@@ -8,6 +8,7 @@
 #include <hal.h>
 #include <lib/libc.h>
 #include <lib/queue.h>
+#include <pmp.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -616,6 +617,9 @@ void dispatch(void)
         next_task->state = TASK_RUNNING;
     next_task->time_slice = get_priority_timeslice(next_task->prio_level);
 
+    /* Switch PMP configuration if tasks have different memory spaces */
+    pmp_switch_context(prev_task->mspace, next_task->mspace);
+
     /* Perform context switch based on scheduling mode */
     if (kcb->preemptive) {
         /* Same task - no context switch needed */
@@ -675,7 +679,15 @@ void yield(void)
     /* In cooperative mode, delays are only processed on an explicit yield. */
     list_foreach(kcb->tasks, delay_update, NULL);
 
+    /* Save current task before scheduler modifies task_current */
+    tcb_t *prev_task = (tcb_t *) kcb->task_current->data;
+
     sched_select_next_task(); /* Use O(1) priority scheduler */
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    tcb_t *next_task = (tcb_t *) kcb->task_current->data;
+    pmp_switch_context(prev_task->mspace, next_task->mspace);
+
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
 }
 
