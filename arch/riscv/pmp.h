@@ -9,6 +9,8 @@
 #include <sys/memprot.h>
 #include <types.h>
 
+#include "csr.h"
+
 /* PMP Region Priority Levels (lower value = higher priority)
  *
  * Used for eviction decisions when hardware PMP regions are exhausted.
