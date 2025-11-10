@@ -9,6 +9,7 @@
 #include <sys/memprot.h>
 #include <types.h>
 
+#include "csr.h"
 #include "hal.h"
 
 /* PMP Region Priority Levels (lower value = higher priority)
