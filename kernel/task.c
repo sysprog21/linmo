@@ -760,6 +760,30 @@ static int32_t task_spawn_impl(void *task_entry,
         panic(ERR_STACK_ALLOC);
     }
 
+    /* Create memory space for task */
+    tcb->mspace = mo_memspace_create(kcb->next_tid, 0);
+    if (!tcb->mspace) {
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Register stack as flexpage */
+    fpage_t *stack_fpage =
+        mo_fpage_create((uint32_t) tcb->stack, new_stack_size,
+                        PMPCFG_R | PMPCFG_W, PMP_PRIORITY_STACK);
+    if (!stack_fpage) {
+        mo_memspace_destroy(tcb->mspace);
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Add stack to memory space */
+    stack_fpage->as_next = tcb->mspace->first;
+    tcb->mspace->first = stack_fpage;
+    tcb->mspace->pmp_stack = stack_fpage;
+
     /* Minimize critical section duration */
     CRITICAL_ENTER();
 
