@@ -3,6 +3,7 @@
 #include <sys/task.h>
 
 #include "csr.h"
+#include "pmp.h"
 #include "private/stdio.h"
 #include "private/utils.h"
 
@@ -219,6 +220,12 @@ static void uart_init(uint32_t baud)
 void hal_hardware_init(void)
 {
     uart_init(USART_BAUD);
+
+    /* Initialize PMP hardware with kernel memory regions */
+    pmp_config_t *pmp_config = pmp_get_config();
+    if (pmp_init_kernel(pmp_config) != 0)
+        hal_panic();
+
     /* Set the first timer interrupt. Subsequent interrupts are set in ISR */
     mtimecmp_w(mtime_r() + (F_CPU / F_TIMER));
     /* Install low-level I/O handlers for the C standard library */
@@ -251,8 +258,9 @@ void hal_cpu_idle(void)
 /* C-level trap handler, called by the '_isr' assembly routine.
  * @cause : The value of the 'mcause' CSR, indicating the reason for the trap.
  * @epc   : The value of the 'mepc' CSR, the PC at the time of the trap.
+ * @mtval : The value of the 'mtval' CSR, the faulting address for access faults.
  */
-void do_trap(uint32_t cause, uint32_t epc)
+void do_trap(uint32_t cause, uint32_t epc, uint32_t mtval)
 {
     static const char *exc_msg[] = {
         /* For printing helpful debug messages */
@@ -294,6 +302,12 @@ void do_trap(uint32_t cause, uint32_t epc)
         const char *reason = "Unknown exception";
         if (code < ARRAY_SIZE(exc_msg) && exc_msg[code])
             reason = exc_msg[code];
+
+        /* Attempt to recover PMP access faults */
+        if ((code == 5 || code == 7) && pmp_handle_access_fault(mtval, code == 7) == 0)
+            return;
+
+        /* All other exceptions are fatal */
         printf("[EXCEPTION] code=%u (%s), epc=%08x, cause=%08x\n", code, reason,
                epc, cause);
         hal_panic();

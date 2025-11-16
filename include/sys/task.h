@@ -44,6 +44,9 @@ enum task_states {
     TASK_SUSPENDED /* Task paused/excluded from scheduling until resumed */
 };
 
+/* Task Flags */
+#define TASK_FLAG_ZOMBIE 0x01 /* Task terminated, awaiting cleanup */
+
 /* Priority Level Constants for Priority-Aware Time Slicing */
 #define TASK_PRIORITY_LEVELS 8  /* Number of priority levels (0-7) */
 #define TASK_HIGHEST_PRIORITY 0 /* Highest priority level */
@@ -59,6 +62,9 @@ enum task_states {
 #define TASK_TIMESLICE_LOW 10     /* Low priority: longer slice */
 #define TASK_TIMESLICE_IDLE 15    /* Idle tasks: longest slice */
 
+/* Forward declaration */
+struct memspace;
+
 /* Task Control Block (TCB)
  *
  * Contains all essential information about a single task, including saved
@@ -71,6 +77,8 @@ typedef struct tcb {
     size_t stack_sz; /* Total size of the stack in bytes */
     void (*entry)(void); /* Task's entry point function */
 
+    /* Memory Protection */
+    struct memspace *mspace; /* Memory space for task isolation */
     /* Scheduling Parameters */
     uint16_t prio;      /* Encoded priority (base and time slice counter) */
     uint8_t prio_level; /* Priority level (0-7, 0 = highest) */
@@ -78,7 +86,7 @@ typedef struct tcb {
     uint16_t delay;     /* Ticks remaining for task in TASK_BLOCKED state */
     uint16_t id;        /* Unique task ID, assigned by kernel upon creation */
     uint8_t state;      /* Current lifecycle state (e.g., TASK_READY) */
-    uint8_t flags;      /* Task flags for future extensions (reserved) */
+    uint8_t flags;      /* Task flags (TASK_FLAG_ZOMBIE for deferred cleanup) */
 
     /* Real-time Scheduling Support */
     void *rt_prio; /* Opaque pointer for custom real-time scheduler hook */
@@ -275,6 +283,16 @@ uint64_t mo_uptime(void);
  * @wait_q : The wait queue to which the current task will be added
  */
 void _sched_block(queue_t *wait_q);
+
+/* Terminates the currently running task due to unrecoverable fault.
+ *
+ * Marks the current task as suspended and sets the zombie flag for deferred
+ * cleanup. Forces an immediate context switch to another task. The marked
+ * task's resources will be freed by the scheduler after the switch completes.
+ *
+ * This function does not return - execution continues in another task.
+ */
+void task_terminate_current(void) __attribute__((noreturn));
 
 /* Application Entry Point */
 

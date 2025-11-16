@@ -7,6 +7,7 @@
 
 #include <hal.h>
 #include <lib/queue.h>
+#include <pmp.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -457,6 +458,48 @@ static int32_t noop_rtsched(void)
     return -1;
 }
 
+/* Helper to clean up zombie task resources from safe context */
+static void cleanup_zombie_task(tcb_t *zombie)
+{
+    if (!zombie || !(zombie->flags & TASK_FLAG_ZOMBIE))
+        return;
+
+    /* Find and remove task node from list */
+    CRITICAL_ENTER();
+
+    list_node_t *node = NULL;
+    list_node_t *iter = kcb->tasks->head;
+    while (iter) {
+        if (iter->data == zombie) {
+            node = iter;
+            break;
+        }
+        iter = iter->next;
+    }
+
+    if (node) {
+        list_remove(kcb->tasks, node);
+        kcb->task_count--;
+
+        /* Clear from cache */
+        for (int i = 0; i < TASK_CACHE_SIZE; i++) {
+            if (task_cache[i].task == zombie) {
+                task_cache[i].id = 0;
+                task_cache[i].task = NULL;
+            }
+        }
+    }
+
+    CRITICAL_LEAVE();
+
+    /* Free resources outside critical section */
+    if (zombie->mspace)
+        mo_memspace_destroy(zombie->mspace);
+
+    free(zombie->stack);
+    free(zombie);
+}
+
 /* The main entry point from the system tick interrupt. */
 void dispatcher(void)
 {
@@ -495,11 +538,23 @@ void dispatch(void)
     uint32_t ready_count = 0;
     list_foreach(kcb->tasks, delay_update_batch, &ready_count);
 
+    /* Save old task before scheduler modifies task_current */
+    tcb_t *old_task = (tcb_t *)kcb->task_current->data;
+    memspace_t *old_mspace = old_task->mspace;
+
     /* Hook for real-time scheduler - if it selects a task, use it */
     if (kcb->rt_sched() < 0)
         sched_select_next_task(); /* Use O(1) priority scheduler */
 
+    /* Clean up zombie task from previous context switch */
+    if (old_task->flags & TASK_FLAG_ZOMBIE)
+        cleanup_zombie_task(old_task);
+
     hal_interrupt_tick();
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    memspace_t *new_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+    pmp_switch_context(old_mspace, new_mspace);
 
     /* Restore next task context */
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
@@ -526,7 +581,20 @@ void yield(void)
     if (!kcb->preemptive)
         list_foreach(kcb->tasks, delay_update, NULL);
 
+    /* Save old task before scheduler modifies task_current */
+    tcb_t *old_task = (tcb_t *)kcb->task_current->data;
+    memspace_t *old_mspace = old_task->mspace;
+
     sched_select_next_task(); /* Use O(1) priority scheduler */
+
+    /* Clean up zombie task from previous context switch */
+    if (old_task->flags & TASK_FLAG_ZOMBIE)
+        cleanup_zombie_task(old_task);
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    memspace_t *new_mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+    pmp_switch_context(old_mspace, new_mspace);
+
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
 }
 
@@ -589,6 +657,30 @@ int32_t mo_task_spawn(void *task_entry, uint16_t stack_size_req)
         free(tcb);
         panic(ERR_STACK_ALLOC);
     }
+
+    /* Create memory space for task */
+    tcb->mspace = mo_memspace_create(kcb->next_tid, 0);
+    if (!tcb->mspace) {
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Register stack as flexpage */
+    fpage_t *stack_fpage =
+        mo_fpage_create((uint32_t) tcb->stack, new_stack_size,
+                        PMPCFG_R | PMPCFG_W, PMP_PRIORITY_STACK);
+    if (!stack_fpage) {
+        mo_memspace_destroy(tcb->mspace);
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Add stack to memory space */
+    stack_fpage->as_next = tcb->mspace->first;
+    tcb->mspace->first = stack_fpage;
+    tcb->mspace->pmp_stack = stack_fpage;
 
     /* Minimize critical section duration */
     CRITICAL_ENTER();
@@ -672,6 +764,33 @@ int32_t mo_task_cancel(uint16_t id)
     free(tcb);
     free(node);
     return ERR_OK;
+}
+
+void task_terminate_current(void)
+{
+    NOSCHED_ENTER();
+
+    /* Verify we have a current task */
+    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data)) {
+        NOSCHED_LEAVE();
+        panic(ERR_NO_TASKS);
+    }
+
+    tcb_t *self = kcb->task_current->data;
+
+    /* Mark as suspended to prevent re-scheduling */
+    self->state = TASK_SUSPENDED;
+
+    /* Set zombie flag for deferred cleanup */
+    self->flags |= TASK_FLAG_ZOMBIE;
+
+    NOSCHED_LEAVE();
+
+    /* Force immediate context switch - never returns */
+    _dispatch();
+
+    /* Unreachable */
+    __builtin_unreachable();
 }
 
 void mo_task_yield(void)
