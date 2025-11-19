@@ -25,8 +25,16 @@ static kcb_t kernel_state = {
     .task_count = 0,
     .ticks = 0,
     .preemptive = true, /* Default to preemptive mode */
+    .ready_bitmap = 0,
+    .ready_queues = {NULL},
+    .rr_cursors = {NULL},
 };
 kcb_t *kcb = &kernel_state;
+
+/* Bitmap operation */
+#define BITMAP_CHECK(prio) (kcb->ready_bitmap & 1U << prio)
+#define BITMAP_SET(prio) (kcb->ready_bitmap |= 1U << prio)
+#define BITMAP_CLEAN(prio) (kcb->ready_bitmap &= ~(1U << prio))
 
 /* timer work management for reduced latency */
 static volatile uint32_t timer_work_pending = 0;    /* timer work types */
@@ -68,7 +76,7 @@ static const uint8_t priority_timeslices[TASK_PRIORITY_LEVELS] = {
     TASK_TIMESLICE_IDLE      /* Priority 7: Idle */
 };
 
-/* Mark task as ready (state-based) */
+/* Enqueue task into ready queue */
 static void sched_enqueue_task(tcb_t *task);
 
 /* Utility and Validation Functions */
@@ -335,29 +343,67 @@ void _yield(void) __attribute__((weak, alias("yield")));
  * practical performance with strong guarantees for fairness and reliability.
  */
 
-/* Add task to ready state - simple state-based approach */
+/* Enqueue task into ready queue */
 static void sched_enqueue_task(tcb_t *task)
 {
     if (unlikely(!task))
         return;
 
+    uint8_t prio_level = task->prio_level;
+
     /* Ensure task has appropriate time slice for its priority */
-    task->time_slice = get_priority_timeslice(task->prio_level);
+    task->time_slice = get_priority_timeslice(prio_level);
     task->state = TASK_READY;
 
-    /* Task selection is handled directly through the master task list */
+    list_t **rq = &kcb->ready_queues[prio_level];
+    list_node_t **cursor = &kcb->rr_cursors[prio_level];
+
+    if (!*rq)
+        *rq = list_create();
+
+    list_pushback_node(*rq, &task->rq_node);
+
+    /* Update task count in ready queue */
+    kcb->queue_counts[prio_level]++;
+
+    /* Setup first rr_cursor */
+    if (!*cursor)
+        *cursor = &task->rq_node;
+
+    /* Advance cursor when cursor same as running task */
+    if (*cursor == kcb->task_current)
+        *cursor = &task->rq_node;
+
+    BITMAP_SET(task->prio_level);
+    return;
 }
 
-/* Remove task from ready queues - state-based approach for compatibility */
-void sched_dequeue_task(tcb_t *task)
+/* Remove task from ready queue; return removed ready queue node */
+static __attribute__((unused)) void sched_dequeue_task(tcb_t *task)
 {
-    if (unlikely(!task))
+    if (unlikely(!task || !(&task->rq_node)))
         return;
 
-    /* For tasks that need to be removed from ready state (suspended/cancelled),
-     * we rely on the state change. The scheduler will skip non-ready tasks
-     * when it encounters them during the round-robin traversal.
-     */
+    uint8_t prio_level = task->prio_level;
+
+    /* For task that need to be removed from ready/running state, it need be
+     * removed from corresponding ready queue. */
+    list_t *rq = kcb->ready_queues[prio_level];
+    list_node_t **cursor = &kcb->rr_cursors[prio_level];
+
+    /* Safely move cursor to next task node. */
+    if (&task->rq_node == *cursor)
+        *cursor = list_cnext(rq, *cursor);
+
+    /* Remove ready queue node */
+    list_remove_node(rq, &task->rq_node);
+
+    /* Update task count in ready queue */
+    if (!--kcb->queue_counts[prio_level]) {
+        *cursor = NULL;
+        BITMAP_CLEAN(task->prio_level);
+    }
+    return;
 }
 
 /* Handle time slice expiration for current task */
@@ -378,20 +424,15 @@ void sched_tick_current_task(void)
     }
 }
 
-/* Task wakeup - simple state transition approach */
+/* Task wakeup and enqueue into ready queue */
 void sched_wakeup_task(tcb_t *task)
 {
     if (unlikely(!task))
         return;
 
-    /* Mark task as ready - scheduler will find it during round-robin traversal
-     */
-    if (task->state != TASK_READY) {
-        task->state = TASK_READY;
-        /* Ensure task has time slice */
-        if (task->time_slice == 0)
-            task->time_slice = get_priority_timeslice(task->prio_level);
-    }
+    /* Enqueue task into ready queue */
+    if (task->state != TASK_READY && task->state != TASK_RUNNING)
+        sched_enqueue_task(task);
 }
 
 /* Efficient Round-Robin Task Selection with O(n) Complexity
@@ -665,6 +706,10 @@ int32_t mo_task_cancel(uint16_t id)
         }
     }
 
+    /* Remove from ready queue */
+    if (tcb->state == TASK_READY)
+        sched_dequeue_task(tcb);
+
     CRITICAL_LEAVE();
 
     /* Free memory outside critical section */
@@ -695,7 +740,9 @@ void mo_task_delay(uint16_t ticks)
 
     tcb_t *self = kcb->task_current->data;
 
-    /* Set delay and blocked state - scheduler will skip blocked tasks */
+    /* Set delay and blocked state, dequeue from ready queue */
+    sched_dequeue_task(self);
+
     self->delay = ticks;
     self->state = TASK_BLOCKED;
     NOSCHED_LEAVE();
@@ -722,8 +769,13 @@ int32_t mo_task_suspend(uint16_t id)
         return ERR_TASK_CANT_SUSPEND;
     }
 
+    /* Remove task node from ready queue if task is in ready queue
+     * (TASK_RUNNING/TASK_READY).*/
+    if (task->state == TASK_READY || task->state == TASK_RUNNING)
+        sched_dequeue_task(task);
+
     task->state = TASK_SUSPENDED;
-    bool is_current = (kcb->task_current == node);
+    bool is_current = (kcb->task_current->data == task);
 
     CRITICAL_LEAVE();
 
@@ -750,9 +802,8 @@ int32_t mo_task_resume(uint16_t id)
         CRITICAL_LEAVE();
         return ERR_TASK_CANT_RESUME;
     }
-
-    /* mark as ready - scheduler will find it */
-    task->state = TASK_READY;
+    /* Enqueue resumed task into ready queue */
+    sched_enqueue_task(task);
 
     CRITICAL_LEAVE();
     return ERR_OK;
@@ -865,6 +916,9 @@ void _sched_block(queue_t *wait_q)
     process_deferred_timer_work();
 
     tcb_t *self = kcb->task_current->data;
+
+    /* Remove node from ready queue */
+    sched_dequeue_task(self);
 
     if (queue_enqueue(wait_q, self) != 0)
         panic(ERR_SEM_OPERATION);
