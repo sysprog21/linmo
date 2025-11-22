@@ -16,7 +16,7 @@ extern uint32_t _sbss, _ebss;
 
 /* C entry points */
 void main(void);
-void do_trap(uint32_t cause, uint32_t epc);
+void do_trap(uint32_t cause, uint32_t epc, uint32_t mtval);
 void hal_panic(void);
 
 /* Machine-mode entry point ('_entry'). This is the first code executed on
@@ -94,10 +94,10 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
 }
 
 /* Size of the full trap context frame saved on the stack by the ISR.
- * 30 GPRs (x1, x3-x31) + mcause + mepc = 32 registers * 4 bytes = 128 bytes.
- * This provides a 16-byte aligned full context save.
+ * 30 GPRs (x1, x3-x31) + mcause + mepc + mtval = 33 * 4 bytes = 132 bytes.
+ * Rounded to 136 bytes for 16-byte alignment.
  */
-#define ISR_CONTEXT_SIZE 128
+#define ISR_CONTEXT_SIZE 136
 
 /* Low-level Interrupt Service Routine (ISR) trampoline.
  *
@@ -120,7 +120,7 @@ __attribute__((naked, aligned(4))) void _isr(void)
          *  48: a4,  52: a5,  56: a6,  60: a7,  64: s2,  68: s3
          *  72: s4,  76: s5,  80: s6,  84: s7,  88: s8,  92: s9
          *  96: s10, 100:s11, 104:t3, 108: t4, 112: t5, 116: t6
-         * 120: mcause, 124: mepc
+         * 120: mcause, 124: mepc, 128: mtval
          */
         "sw  ra,   0*4(sp)\n"
         "sw  gp,   1*4(sp)\n"
@@ -159,6 +159,7 @@ __attribute__((naked, aligned(4))) void _isr(void)
         "mv     a2, sp\n"     /* Arg 3: isr_sp (current stack frame) */
         "sw     a0,  30*4(sp)\n"
         "sw     a1,  31*4(sp)\n"
+        "sw     a2,  32*4(sp)\n"
 
         /* Call the high-level C trap handler.
          * Returns: a0 = SP to use for restoring context (may be different
