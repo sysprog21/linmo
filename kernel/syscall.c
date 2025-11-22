@@ -17,7 +17,7 @@ static const void *syscall_table[SYS_COUNT] = {SYSCALL_TABLE};
 #undef _
 
 /* Weak, generic dispatcher */
-int syscall(int num, void *a1, void *a2, void *a3)
+__attribute__((weak)) int syscall(int num, void *a1, void *a2, void *a3)
 {
     if (unlikely(num <= 0 || num >= SYS_COUNT))
         return -ENOSYS;
