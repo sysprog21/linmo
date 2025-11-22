@@ -321,6 +321,31 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
     } else { /* Synchronous Exception */
         uint32_t code = MCAUSE_GET_CODE(cause);
 
+        /* Handle ecall from U-mode - system calls */
+        if (code == MCAUSE_ECALL_UMODE) {
+            /* Advance mepc past the ecall instruction (4 bytes) */
+            uint32_t new_epc = epc + 4;
+            write_csr(mepc, new_epc);
+
+            uint32_t *isr_frame = (uint32_t *) isr_sp;
+            isr_frame[31] = new_epc;
+
+            /* Extract syscall arguments from ISR frame */
+            int syscall_num = isr_frame[15];
+            void *arg1 = (void *) isr_frame[8];
+            void *arg2 = (void *) isr_frame[9];
+            void *arg3 = (void *) isr_frame[10];
+
+            /* Dispatch to syscall handler */
+            extern int syscall(int num, void *arg1, void *arg2, void *arg3);
+            int retval = syscall(syscall_num, arg1, arg2, arg3);
+
+            /* Store return value */
+            isr_frame[8] = retval;
+
+            return isr_sp;
+        }
+
         /* Handle ecall from M-mode - used for yielding in preemptive mode */
         if (code == MCAUSE_ECALL_MMODE) {
             /* Advance mepc past the ecall instruction (4 bytes) */
