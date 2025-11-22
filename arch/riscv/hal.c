@@ -784,12 +784,12 @@ void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra)
     /* Set the essential registers for a new task:
      * - SP is set to the prepared top of the task's stack.
      * - RA is set to the task's entry point.
-     * - mstatus is set to enable interrupts and ensure machine mode.
+     * - mstatus is set to enable interrupts and ensure user mode.
      *
      * When this context is first restored, the ret instruction will effectively
      * jump to this entry point, starting the task.
      */
     (*ctx)[CONTEXT_SP] = (uint32_t) stack_top;
     (*ctx)[CONTEXT_RA] = (uint32_t) ra;
-    (*ctx)[CONTEXT_MSTATUS] = MSTATUS_MIE | MSTATUS_MPP_MACH;
+    (*ctx)[CONTEXT_MSTATUS] = MSTATUS_MIE | MSTATUS_MPP_USER;
 }
