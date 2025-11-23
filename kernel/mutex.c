@@ -64,24 +64,6 @@ static bool remove_self_from_waiters(list_t *waiters)
     return false;
 }
 
-/* Atomic block operation with enhanced error checking */
-static void mutex_block_atomic(list_t *waiters)
-{
-    if (unlikely(!waiters || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
-        panic(ERR_SEM_OPERATION);
-
-    tcb_t *self = kcb->task_current->data;
-
-    /* Add to waiters list */
-    if (unlikely(!list_pushback(waiters, self)))
-        panic(ERR_SEM_OPERATION);
-
-    /* Block and yield atomically */
-    self->state = TASK_BLOCKED;
-    _yield(); /* This releases NOSCHED when we context switch */
-}
-
 int32_t mo_mutex_init(mutex_t *m)
 {
     if (unlikely(!m))
@@ -162,7 +144,7 @@ int32_t mo_mutex_lock(mutex_t *m)
     }
 
     /* Slow path: mutex is owned, must block atomically */
-    mutex_block_atomic(m->waiters);
+    _sched_block_mutex(m->waiters);
 
     /* When we return here, we've been woken by mo_mutex_unlock()
      * and ownership has been transferred to us. */
@@ -283,7 +265,7 @@ int32_t mo_mutex_unlock(mutex_t *m)
             /* Validate task state before waking */
             if (likely(next_owner->state == TASK_BLOCKED)) {
                 m->owner_tid = next_owner->id;
-                next_owner->state = TASK_READY;
+                sched_wakeup_task(next_owner);
                 /* Clear any pending timeout since we're granting ownership */
                 next_owner->delay = 0;
             } else {

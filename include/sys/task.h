@@ -86,6 +86,10 @@ typedef struct tcb {
 
     /* Stack Protection */
     uint32_t canary; /* Random stack canary for overflow detection */
+
+    /* State transition support */
+    /* Ready queue membership node (only one per task) */
+    list_node_t rq_node;
 } tcb_t;
 
 /* Kernel Control Block (KCB)
@@ -108,14 +112,24 @@ typedef struct {
     /* Timer Management */
     list_t *timer_list;      /* List of active software timers */
     volatile uint32_t ticks; /* Global system tick, incremented by timer */
+
+    /* Scheduling attribution */
+    uint8_t ready_bitmap; /* 8-bit priority bitmap */
+    list_t
+        *ready_queues[TASK_PRIORITY_LEVELS]; /* Separate queue per priority */
+    uint16_t queue_counts[TASK_PRIORITY_LEVELS]; /* O(1) size tracking */
+
+    /* Weighted Round-Robin State per Priority Level */
+    list_node_t *rr_cursors[TASK_PRIORITY_LEVELS]; /* Round-robin position */
+
+    /* System idle task */
+    list_node_t task_idle;
 } kcb_t;
 
 /* Global pointer to the singleton Kernel Control Block */
 extern kcb_t *kcb;
 
 /* System Configuration Constants */
-#define SCHED_IMAX \
-    500 /* Safety limit for scheduler iterations to prevent livelock */
 #define MIN_TASK_STACK_SIZE \
     256 /* Minimum stack size to prevent stack overflow */
 #define TASK_CACHE_SIZE \
@@ -288,6 +302,9 @@ uint64_t mo_uptime(void);
  */
 void _sched_block(queue_t *wait_q);
 
+/* Support mutex data structure */
+void _sched_block_mutex(list_t *waiters);
+
 /* Application Entry Point */
 
 /* The main entry point for the user application.
@@ -299,3 +316,20 @@ void _sched_block(queue_t *wait_q);
  * Returns 'true' to enable preemptive scheduling, or 'false' for cooperative
  */
 int32_t app_main(void);
+
+/* Initialize the idle task
+ *
+ * This function statically creates and initializes the idle task structure.
+ * It should be called once during system startup.
+ *
+ * The idle task is a permanent system task that runs when no other
+ * ready tasks exist. It is never enqueued into any ready queue and
+ * cannot be suspended, canceled, or priority modified.
+ *
+ * Only one idle task exists per hart. Its priority is fixed to the
+ * lowest level and its time slice is zero.
+ */
+void idle_task_init(void);
+
+/* Wake up and enqueue task into ready queue */
+void sched_wakeup_task(tcb_t *);
