@@ -16,17 +16,28 @@ SYSCALL_TABLE
 static const void *syscall_table[SYS_COUNT] = {SYSCALL_TABLE};
 #undef _
 
-/* Weak, generic dispatcher */
-int syscall(int num, void *a1, void *a2, void *a3)
+/* Core syscall execution via direct table lookup.
+ * Called by trap handlers to invoke syscall implementations without
+ * triggering privilege transitions. User space must not call this directly.
+ */
+int do_syscall(int num, void *a1, void *a2, void *a3)
 {
     if (unlikely(num <= 0 || num >= SYS_COUNT))
         return -ENOSYS;
 
-    /* safety check for valid function pointer */
     if (unlikely(!syscall_table[num]))
         return -ENOSYS;
 
     return ((int (*)(void *, void *, void *)) syscall_table[num])(a1, a2, a3);
+}
+
+/* Generic user-space syscall interface.
+ * This weak symbol allows architecture-specific implementations to override
+ * with trap-based entry mechanisms.
+ */
+__attribute__((weak)) int syscall(int num, void *a1, void *a2, void *a3)
+{
+    return do_syscall(num, a1, a2, a3);
 }
 
 static char *_env[1] = {0};
@@ -239,7 +250,7 @@ static int _tadd(void *task, int stack_size)
     return mo_task_spawn(task, stack_size);
 }
 
-int sys_task_add(void *task, int stack_size)
+int sys_tadd(void *task, int stack_size)
 {
     return syscall(SYS_tadd, task, (void *) stack_size, 0);
 }
@@ -252,7 +263,7 @@ static int _tcancel(int id)
     return mo_task_cancel(id);
 }
 
-int sys_task_cancel(int id)
+int sys_tcancel(int id)
 {
     return syscall(SYS_tcancel, (void *) id, 0, 0);
 }
@@ -263,7 +274,7 @@ static int _tyield(void)
     return 0;
 }
 
-int sys_task_yield(void)
+int sys_tyield(void)
 {
     return syscall(SYS_tyield, 0, 0, 0);
 }
@@ -277,7 +288,7 @@ static int _tdelay(int ticks)
     return 0;
 }
 
-int sys_task_delay(int ticks)
+int sys_tdelay(int ticks)
 {
     return syscall(SYS_tdelay, (void *) ticks, 0, 0);
 }
@@ -290,7 +301,7 @@ static int _tsuspend(int id)
     return mo_task_suspend(id);
 }
 
-int sys_task_suspend(int id)
+int sys_tsuspend(int id)
 {
     return syscall(SYS_tsuspend, (void *) id, 0, 0);
 }
@@ -303,7 +314,7 @@ static int _tresume(int id)
     return mo_task_resume(id);
 }
 
-int sys_task_resume(int id)
+int sys_tresume(int id)
 {
     return syscall(SYS_tresume, (void *) id, 0, 0);
 }
@@ -316,7 +327,7 @@ static int _tpriority(int id, int priority)
     return mo_task_priority(id, priority);
 }
 
-int sys_task_priority(int id, int priority)
+int sys_tpriority(int id, int priority)
 {
     return syscall(SYS_tpriority, (void *) id, (void *) priority, 0);
 }
@@ -326,7 +337,7 @@ static int _tid(void)
     return mo_task_id();
 }
 
-int sys_task_id(void)
+int sys_tid(void)
 {
     return syscall(SYS_tid, 0, 0, 0);
 }
@@ -337,7 +348,7 @@ static int _twfi(void)
     return 0;
 }
 
-int sys_task_wfi(void)
+int sys_twfi(void)
 {
     return syscall(SYS_twfi, 0, 0, 0);
 }
@@ -347,7 +358,7 @@ static int _tcount(void)
     return mo_task_count();
 }
 
-int sys_task_count(void)
+int sys_tcount(void)
 {
     return syscall(SYS_tcount, 0, 0, 0);
 }
