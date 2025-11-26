@@ -105,15 +105,21 @@ void hal_timer_irq_disable(
 void hal_interrupt_tick(void); /* Enable interrupts on first task run */
 void *hal_build_initial_frame(
     void *stack_top,
-    void (*task_entry)(void)); /* Build ISR frame for preemptive mode */
+    void (*task_entry)(void),
+    int user_mode); /* Build ISR frame for preemptive mode */
 
 /* Initializes the context structure for a new task.
- * @ctx : Pointer to jmp_buf to initialize (must be non-NULL).
- * @sp  : Base address of the task's stack (must be valid).
- * @ss  : Total size of the stack in bytes (must be >= MIN_STACK_SIZE).
- * @ra  : The task's entry point function (must be non-NULL).
+ * @ctx       : Pointer to jmp_buf to initialize (must be non-NULL).
+ * @sp        : Base address of the task's stack (must be valid).
+ * @ss        : Total size of the stack in bytes (must be >= MIN_STACK_SIZE).
+ * @ra        : The task's entry point function (must be non-NULL).
+ * @user_mode : Non-zero to initialize for user mode, zero for machine mode.
  */
-void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra);
+void hal_context_init(jmp_buf *ctx,
+                      size_t sp,
+                      size_t ss,
+                      size_t ra,
+                      int user_mode);
 
 /* Halts the CPU in an unrecoverable error state, shutting down if possible */
 void hal_panic(void);
