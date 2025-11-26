@@ -11,6 +11,7 @@ TOOLCHAIN_TYPE=${TOOLCHAIN_TYPE:-gnu}
 declare -A FUNCTIONAL_TESTS
 FUNCTIONAL_TESTS["mutex"]="Fairness: PASS,Mutual Exclusion: PASS,Data Consistency: PASS,Overall: PASS"
 FUNCTIONAL_TESTS["semaphore"]="Overall: PASS"
+FUNCTIONAL_TESTS["umode"]="PASS: sys_tid() returned,PASS: sys_uptime() returned,[EXCEPTION] Illegal instruction"
 #FUNCTIONAL_TESTS["test64"]="Unsigned Multiply: PASS,Unsigned Divide: PASS,Signed Multiply: PASS,Signed Divide: PASS,Left Shifts: PASS,Logical Right Shifts: PASS,Arithmetic Right Shifts: PASS,Overall: PASS"
 #FUNCTIONAL_TESTS["suspend"]="Suspend: PASS,Resume: PASS,Self-Suspend: PASS,Overall: PASS"
 
@@ -75,7 +76,8 @@ test_functional_app() {
     IFS=',' read -ra PASS_CRITERIA <<< "$expected_passes"
 
     # Check for crashes first
-    if echo "$output" | grep -qiE "(trap|exception|fault|panic|illegal|segfault)"; then
+    # Special case: umode test expects an illegal instruction exception
+    if [ "$test" != "umode" ] && echo "$output" | grep -qiE "(trap|exception|fault|panic|illegal|segfault)"; then
         echo "[!] Crash detected"
 
         # Mark all criteria as crashed

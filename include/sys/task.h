@@ -187,13 +187,24 @@ void _yield(void);
 
 /* Task Lifecycle Management */
 
-/* Creates and starts a new task.
+/* Creates and starts a new task in machine mode.
  * @task_entry : Pointer to the task's entry function (void func(void))
  * @stack_size : The desired stack size in bytes (minimum is enforced)
  *
  * Returns the new task's ID on success. Panics on memory allocation failure.
  */
 int32_t mo_task_spawn(void *task_entry, uint16_t stack_size);
+
+/* Creates and starts a new task in user mode.
+ * User mode tasks run with reduced privileges and must use syscalls to access
+ * kernel services. This provides memory protection and privilege separation.
+ *
+ * @task_entry : Pointer to the task's entry function (void func(void))
+ * @stack_size : The desired stack size in bytes (minimum is enforced)
+ *
+ * Returns the new task's ID on success. Panics on memory allocation failure.
+ */
+int32_t mo_task_spawn_user(void *task_entry, uint16_t stack_size);
 
 /* Cancels and removes a task from the system. A task cannot cancel itself.
  * @id : The ID of the task to cancel

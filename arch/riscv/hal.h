@@ -74,7 +74,13 @@ void longjmp(jmp_buf env, int32_t val);
 /* HAL context switching routines for complete context management */
 int32_t hal_context_save(jmp_buf env);
 void hal_context_restore(jmp_buf env, int32_t val);
-void hal_dispatch_init(jmp_buf env);
+
+/* Transfers control from kernel main thread to the first task.
+ * In preemptive mode, ctx should be the ISR frame pointer (void *sp).
+ * In cooperative mode, ctx should be the jmp_buf context.
+ * @ctx : ISR frame pointer (preemptive) or jmp_buf (cooperative).
+ */
+void hal_dispatch_init(void *ctx);
 
 /* Stack switching for preemptive context switch.
  * Saves current SP to *old_sp and loads new SP from new_sp.
@@ -105,15 +111,21 @@ void hal_timer_irq_disable(
 void hal_interrupt_tick(void); /* Enable interrupts on first task run */
 void *hal_build_initial_frame(
     void *stack_top,
-    void (*task_entry)(void)); /* Build ISR frame for preemptive mode */
+    void (*task_entry)(void),
+    int user_mode); /* Build ISR frame for preemptive mode */
 
 /* Initializes the context structure for a new task.
- * @ctx : Pointer to jmp_buf to initialize (must be non-NULL).
- * @sp  : Base address of the task's stack (must be valid).
- * @ss  : Total size of the stack in bytes (must be >= MIN_STACK_SIZE).
- * @ra  : The task's entry point function (must be non-NULL).
+ * @ctx       : Pointer to jmp_buf to initialize (must be non-NULL).
+ * @sp        : Base address of the task's stack (must be valid).
+ * @ss        : Total size of the stack in bytes (must be >= MIN_STACK_SIZE).
+ * @ra        : The task's entry point function (must be non-NULL).
+ * @user_mode : Non-zero to initialize for user mode, zero for machine mode.
  */
-void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra);
+void hal_context_init(jmp_buf *ctx,
+                      size_t sp,
+                      size_t ss,
+                      size_t ra,
+                      int user_mode);
 
 /* Halts the CPU in an unrecoverable error state, shutting down if possible */
 void hal_panic(void);
