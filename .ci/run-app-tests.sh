@@ -47,7 +47,7 @@ else
 fi
 
 # Filter excluded apps
-EXCLUDED_APPS=""
+EXCLUDED_APPS="umode"
 if [ -n "$EXCLUDED_APPS" ]; then
     FILTERED_APPS=""
     for app in $APPS; do
