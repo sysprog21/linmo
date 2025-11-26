@@ -153,3 +153,9 @@ char *getline(char *s);
 int32_t printf(const char *fmt, ...);
 int32_t snprintf(char *str, size_t size, const char *fmt, ...);
 int vsnprintf(char *str, size_t size, const char *fmt, va_list args);
+
+/* User mode safe formatted output.
+ * Similar to printf but safe for U-mode tasks - formats in user space
+ * then uses syscall to output, avoiding privilege violations.
+ */
+int32_t umode_printf(const char *fmt, ...);

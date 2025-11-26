@@ -382,3 +382,21 @@ int sys_uptime(void)
 {
     return syscall(SYS_uptime, 0, 0, 0);
 }
+
+/* User mode safe output syscall.
+ * Outputs a string from user mode by executing puts() in kernel context.
+ * This avoids privilege violations from printf's logger mutex operations.
+ */
+static int _tputs(const char *str)
+{
+    if (unlikely(!str))
+        return -EINVAL;
+
+    /* Use puts() which will handle logger enqueue or direct output */
+    return puts(str);
+}
+
+int sys_tputs(const char *str)
+{
+    return syscall(SYS_tputs, (void *) str, 0, 0);
+}
