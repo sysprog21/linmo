@@ -74,7 +74,13 @@ void longjmp(jmp_buf env, int32_t val);
 /* HAL context switching routines for complete context management */
 int32_t hal_context_save(jmp_buf env);
 void hal_context_restore(jmp_buf env, int32_t val);
-void hal_dispatch_init(jmp_buf env);
+
+/* Transfers control from kernel main thread to the first task.
+ * In preemptive mode, ctx should be the ISR frame pointer (void *sp).
+ * In cooperative mode, ctx should be the jmp_buf context.
+ * @ctx : ISR frame pointer (preemptive) or jmp_buf (cooperative).
+ */
+void hal_dispatch_init(void *ctx);
 
 /* Stack switching for preemptive context switch.
  * Saves current SP to *old_sp and loads new SP from new_sp.

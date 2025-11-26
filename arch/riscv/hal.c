@@ -523,9 +523,15 @@ void *hal_build_initial_frame(void *stack_top,
     frame[1] = (uint32_t) &_gp; /* gp - global pointer */
     frame[2] = tp_val;          /* tp - thread pointer */
 
-    uint32_t mstatus_val = MSTATUS_MIE | MSTATUS_MPIE |
-                           (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
-    frame[FRAME_MSTATUS] = mstatus_val; /* mstatus - enable interrupts */
+    /* Initialize mstatus for new task:
+     * - MPIE=1: mret will copy this to MIE, enabling interrupts after task
+     * starts
+     * - MPP: Set privilege level (U-mode or M-mode)
+     * - MIE=0: Keep interrupts disabled during frame restoration
+     */
+    uint32_t mstatus_val =
+        MSTATUS_MPIE | (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
+    frame[FRAME_MSTATUS] = mstatus_val;
 
     frame[FRAME_EPC] = (uint32_t) task_entry; /* mepc - entry point */
 
@@ -792,23 +798,102 @@ static void __attribute__((naked, used)) __dispatch_init(void)
         "mret\n");        /* Jump to the task's entry point */
 }
 
-/* Transfers control from the kernel's main thread to the first task */
-__attribute__((noreturn)) void hal_dispatch_init(jmp_buf env)
+/* Low-level routine to restore context from ISR frame and jump to task.
+ * This is used in preemptive mode where tasks are managed via ISR frames.
+ */
+static void __attribute__((naked, used)) __dispatch_init_isr(void)
 {
-    if (unlikely(!env))
+    asm volatile(
+        /* a0 contains the ISR frame pointer (sp value) */
+        "mv     sp, a0\n"
+
+        /* Restore mstatus from frame[32] */
+        "lw     t0, 32*4(sp)\n"
+        "csrw   mstatus, t0\n"
+
+        /* Restore mepc from frame[31] */
+        "lw     t1, 31*4(sp)\n"
+        "csrw   mepc, t1\n"
+
+        /* Restore all general-purpose registers */
+        "lw  ra,   0*4(sp)\n"
+        "lw  gp,   1*4(sp)\n"
+        "lw  tp,   2*4(sp)\n"
+        "lw  t0,   3*4(sp)\n"
+        "lw  t1,   4*4(sp)\n"
+        "lw  t2,   5*4(sp)\n"
+        "lw  s0,   6*4(sp)\n"
+        "lw  s1,   7*4(sp)\n"
+        "lw  a0,   8*4(sp)\n"
+        "lw  a1,   9*4(sp)\n"
+        "lw  a2,  10*4(sp)\n"
+        "lw  a3,  11*4(sp)\n"
+        "lw  a4,  12*4(sp)\n"
+        "lw  a5,  13*4(sp)\n"
+        "lw  a6,  14*4(sp)\n"
+        "lw  a7,  15*4(sp)\n"
+        "lw  s2,  16*4(sp)\n"
+        "lw  s3,  17*4(sp)\n"
+        "lw  s4,  18*4(sp)\n"
+        "lw  s5,  19*4(sp)\n"
+        "lw  s6,  20*4(sp)\n"
+        "lw  s7,  21*4(sp)\n"
+        "lw  s8,  22*4(sp)\n"
+        "lw  s9,  23*4(sp)\n"
+        "lw  s10, 24*4(sp)\n"
+        "lw  s11, 25*4(sp)\n"
+        "lw  t3,  26*4(sp)\n"
+        "lw  t4,  27*4(sp)\n"
+        "lw  t5,  28*4(sp)\n"
+        "lw  t6,  29*4(sp)\n"
+
+        /* Deallocate stack frame */
+        "addi   sp, sp, %0\n"
+
+        /* Return from trap - jump to task entry point */
+        "mret\n"
+        :
+        : "i"(ISR_STACK_FRAME_SIZE)
+        : "memory");
+}
+
+/* Transfers control from the kernel's main thread to the first task.
+ * In preemptive mode, ctx should be the ISR frame pointer (void *sp).
+ * In cooperative mode, ctx should be the jmp_buf context.
+ */
+__attribute__((noreturn)) void hal_dispatch_init(void *ctx)
+{
+    if (unlikely(!ctx))
         hal_panic(); /* Cannot proceed without valid context */
 
-    if (kcb->preemptive)
+    if (kcb->preemptive) {
+        /* Preemptive mode: ctx is ISR frame pointer, restore from it.
+         * Enable timer before jumping to task. Global interrupts will be
+         * enabled by mret based on MPIE bit in restored mstatus.
+         */
+        /* Save ctx before hal_timer_enable modifies registers */
+        void *saved_ctx = ctx;
+
         hal_timer_enable();
 
-    _ei(); /* Enable global interrupts just before launching the first task */
+        /* Restore ISR frame pointer and call dispatch */
+        asm volatile(
+            "mv    a0, %0\n"             /* Load ISR frame pointer into a0 */
+            "call __dispatch_init_isr\n" /* Restore from ISR frame */
+            :
+            : "r"(saved_ctx)
+            : "a0", "memory");
+    } else {
+        /* Cooperative mode: ctx is jmp_buf, use standard dispatch */
+        _ei(); /* Enable global interrupts */
 
-    asm volatile(
-        "mv  a0, %0\n"           /* Move @env (the task's context) into 'a0' */
-        "call __dispatch_init\n" /* Call the low-level restore routine */
-        :
-        : "r"(env)
-        : "a0", "memory");
+        asm volatile(
+            "mv  a0, %0\n" /* Move @env (the task's context) into 'a0' */
+            "call __dispatch_init\n" /* Call the low-level restore routine */
+            :
+            : "r"(ctx)
+            : "a0", "memory");
+    }
     __builtin_unreachable();
 }
 
@@ -865,6 +950,8 @@ void hal_context_init(jmp_buf *ctx,
      */
     (*ctx)[CONTEXT_SP] = (uint32_t) stack_top;
     (*ctx)[CONTEXT_RA] = (uint32_t) ra;
-    (*ctx)[CONTEXT_MSTATUS] = MSTATUS_MIE | MSTATUS_MPIE |
-                              (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
+    /* Note: CONTEXT_MSTATUS not used in cooperative mode (setjmp/longjmp),
+     * but set it for consistency with ISR frame initialization */
+    (*ctx)[CONTEXT_MSTATUS] =
+        MSTATUS_MPIE | (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
 }
