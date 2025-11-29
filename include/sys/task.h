@@ -302,6 +302,10 @@ void _sched_block(queue_t *wait_q);
  * state set as TASK_BLOCKED. Currently, this API is used in mutex lock case.*/
 void _sched_block_dequeue(tcb_t *blocked_task);
 
+/* Enqueue path for the task with TASK_BLOCKED state. This API is the mainly
+ * enqueuing path for semaphore and mutex operations. */
+void _sched_block_enqueue(tcb_t *blocked_task);
+
 /* Application Entry Point */
 
 /* The main entry point for the user application.
