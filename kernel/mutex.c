@@ -79,6 +79,9 @@ static void mutex_block_atomic(list_t *waiters)
 
     /* Block and yield atomically */
     self->state = TASK_BLOCKED;
+
+    /* Explicit remove list node from the ready queue */
+    _sched_block_dequeue(self);
     _yield(); /* This releases NOSCHED when we context switch */
 }
 
