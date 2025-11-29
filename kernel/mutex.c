@@ -244,7 +244,7 @@ int32_t mo_mutex_timedlock(mutex_t *m, uint32_t ticks)
     if (self->state == TASK_BLOCKED) {
         /* We woke up due to timeout, not mutex unlock */
         if (remove_self_from_waiters(m->waiters)) {
-            self->state = TASK_READY;
+            _sched_block_enqueue(self);
             result = ERR_TIMEOUT;
         } else {
             /* Race condition: we were both timed out and unlocked */
@@ -286,7 +286,7 @@ int32_t mo_mutex_unlock(mutex_t *m)
             /* Validate task state before waking */
             if (likely(next_owner->state == TASK_BLOCKED)) {
                 m->owner_tid = next_owner->id;
-                next_owner->state = TASK_READY;
+                _sched_block_enqueue(next_owner);
                 /* Clear any pending timeout since we're granting ownership */
                 next_owner->delay = 0;
             } else {
@@ -399,7 +399,7 @@ int32_t mo_cond_wait(cond_t *c, mutex_t *m)
         /* Failed to unlock - remove from wait list and restore state */
         NOSCHED_ENTER();
         remove_self_from_waiters(c->waiters);
-        self->state = TASK_READY;
+        _sched_block_enqueue(self);
         NOSCHED_LEAVE();
         return unlock_result;
     }
@@ -442,7 +442,7 @@ int32_t mo_cond_timedwait(cond_t *c, mutex_t *m, uint32_t ticks)
         /* Failed to unlock - cleanup and restore */
         NOSCHED_ENTER();
         remove_self_from_waiters(c->waiters);
-        self->state = TASK_READY;
+        _sched_block_enqueue(self);
         self->delay = 0;
         NOSCHED_LEAVE();
         return unlock_result;
@@ -458,7 +458,7 @@ int32_t mo_cond_timedwait(cond_t *c, mutex_t *m, uint32_t ticks)
     if (self->state == TASK_BLOCKED) {
         /* Timeout occurred - remove from wait list */
         remove_self_from_waiters(c->waiters);
-        self->state = TASK_READY;
+        _sched_block_enqueue(self);
         self->delay = 0;
         wait_status = ERR_TIMEOUT;
     } else {
@@ -487,7 +487,7 @@ int32_t mo_cond_signal(cond_t *c)
         if (likely(waiter)) {
             /* Validate task state before waking */
             if (likely(waiter->state == TASK_BLOCKED)) {
-                waiter->state = TASK_READY;
+                _sched_block_enqueue(waiter);
                 /* Clear any pending timeout since we're signaling */
                 waiter->delay = 0;
             } else {
@@ -514,7 +514,7 @@ int32_t mo_cond_broadcast(cond_t *c)
         if (likely(waiter)) {
             /* Validate task state before waking */
             if (likely(waiter->state == TASK_BLOCKED)) {
-                waiter->state = TASK_READY;
+                _sched_block_enqueue(waiter);
                 /* Clear any pending timeout since we're broadcasting */
                 waiter->delay = 0;
             } else {
