@@ -56,7 +56,6 @@ static bool remove_self_from_waiters(list_t *waiters)
     while (curr && curr != waiters->tail) {
         if (curr->data == self) {
             list_remove(waiters, curr);
-            free(curr);
             return true;
         }
         curr = curr->next;
