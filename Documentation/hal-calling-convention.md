@@ -109,13 +109,14 @@ void hal_context_restore(jmp_buf env, int32_t val); /* Restore context + process
 The ISR in `boot.c` performs a complete context save of all registers:
 
 ```
-Stack Frame Layout (128 bytes, offsets from sp):
+Stack Frame Layout (144 bytes, 33 words × 4 bytes, offsets from sp):
   0: ra,   4: gp,   8: tp,  12: t0,  16: t1,  20: t2
- 24: s0,  28: s1,  32: a0,  36: a1,  40: a2,  44: a3  
+ 24: s0,  28: s1,  32: a0,  36: a1,  40: a2,  44: a3
  48: a4,  52: a5,  56: a6,  60: a7,  64: s2,  68: s3
  72: s4,  76: s5,  80: s6,  84: s7,  88: s8,  92: s9
  96: s10, 100:s11, 104:t3, 108: t4, 112: t5, 116: t6
-120: mcause, 124: mepc
+120: mcause, 124: mepc, 128: mstatus
+132-143: padding (12 bytes for 16-byte alignment)
 ```
 
 Why full context save in ISR?
@@ -128,7 +129,7 @@ Why full context save in ISR?
 
 Each task stack must reserve space for the ISR frame:
 ```c
-#define ISR_STACK_FRAME_SIZE 128  /* 32 registers × 4 bytes */
+#define ISR_STACK_FRAME_SIZE 144  /* 33 words × 4 bytes, 16-byte aligned */
 ```
 
 This "red zone" is reserved at the top of every task stack to guarantee ISR safety.
@@ -147,10 +148,20 @@ int32_t result = mo_task_spawn(task_function, 2048);
 
 ### System Call Interface
 
-Linmo uses standard function calls (not trap instructions) for system services:
-- Arguments passed in `a0-a7` registers
-- Return values in `a0`
-- No special calling convention required
+Linmo provides system calls through the RISC-V trap mechanism for privilege
+boundary crossing. User mode tasks invoke system calls using the environment
+call instruction, which triggers a synchronous exception handled by the kernel.
+
+System call convention:
+- Arguments passed in `a0-a7` registers before trap
+- System call number in `a7` register
+- Trap handler preserves all registers except return value
+- Return value delivered in `a0` register after trap return
+- Standard RISC-V calling convention maintained across privilege boundary
+
+The trap-based interface allows user mode tasks to safely access kernel
+services without requiring privileged instruction execution. The kernel
+validates all parameters and mediates access to protected resources.
 
 ### Task Entry Points
 
@@ -174,9 +185,9 @@ Each task has its own stack with this layout:
 
 ```
 High Address
-+------------------+ <- stack_base + stack_size  
-| ISR Red Zone     | <- 128 bytes reserved for ISR
-| (128 bytes)      |
++------------------+ <- stack_base + stack_size
+| ISR Red Zone     | <- 144 bytes reserved for ISR
+| (144 bytes)      |
 +------------------+ <- Initial SP (16-byte aligned)
 |                  |
 | Task Stack       | <- Grows downward
@@ -251,8 +262,8 @@ Minimal context (jmp_buf):
 - 17 × 32-bit loads/stores = 68 bytes
 - Essential for cooperative scheduling
 
-Full context (ISR):  
-- 32 × 32-bit loads/stores = 128 bytes  
+Full context (ISR):
+- 33 × 32-bit loads/stores = 144 bytes (includes padding for alignment)
 - Required for preemptive interrupts
 
 ### Function Call Overhead

@@ -72,7 +72,11 @@ int32_t main(void)
      */
     scheduler_started = true;
 
-    hal_dispatch_init(first_task->context);
+    /* In preemptive mode, tasks are managed via ISR frames (sp).
+     * In cooperative mode, tasks are managed via jmp_buf (context).
+     */
+    void *ctx = kcb->preemptive ? first_task->sp : first_task->context;
+    hal_dispatch_init(ctx);
 
     /* This line should be unreachable. */
     panic(ERR_UNKNOWN);

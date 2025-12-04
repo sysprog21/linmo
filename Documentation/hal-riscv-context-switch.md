@@ -96,7 +96,11 @@ State Preservation:
 - Nested interrupts are handled correctly by hardware's automatic state stacking
 
 ### Task Initialization
-New tasks are initialized with proper processor state:
+Task initialization differs between cooperative and preemptive modes due to
+their distinct context management approaches.
+
+In cooperative mode, tasks use lightweight context structures for voluntary
+yielding. New tasks are initialized with execution context only:
 
 ```c
 void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra)
@@ -109,7 +113,58 @@ void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra)
 }
 ```
 
-This ensures new tasks start with interrupts enabled in machine mode.
+This lightweight approach uses standard calling conventions where tasks
+return control through normal function returns.
+
+Preemptive mode requires interrupt frame structures to support trap-based
+context switching and privilege mode transitions. Task initialization builds
+a complete interrupt service routine frame:
+
+```c
+void *hal_build_initial_frame(void *stack_top,
+                              void (*task_entry)(void),
+                              int user_mode)
+{
+    /* Place frame in stack with initial reserve below for proper startup */
+    uint32_t *frame = (uint32_t *) ((uint8_t *) stack_top - 256 -
+                                    ISR_STACK_FRAME_SIZE);
+
+    /* Initialize all general purpose registers to zero */
+    for (int i = 0; i < 32; i++)
+        frame[i] = 0;
+
+    /* Compute thread pointer: aligned to 64 bytes from _end */
+    uint32_t tp_val = ((uint32_t) &_end + 63) & ~63U;
+
+    /* Set essential pointers */
+    frame[FRAME_GP] = (uint32_t) &_gp;  /* Global pointer */
+    frame[FRAME_TP] = tp_val;            /* Thread pointer */
+
+    /* Configure processor state for task entry:
+     * - MPIE=1: Interrupts will enable when task starts
+     * - MPP: Target privilege level (user or machine mode)
+     * - MIE=0: Keep interrupts disabled during frame restoration
+     */
+    uint32_t mstatus_val =
+        MSTATUS_MPIE | (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
+    frame[FRAME_MSTATUS] = mstatus_val;
+
+    /* Set entry point */
+    frame[FRAME_EPC] = (uint32_t) task_entry;
+
+    return frame;  /* Return frame base as initial stack pointer */
+}
+```
+
+The interrupt frame layout reserves space for all register state, control
+registers, and alignment padding. When the scheduler first dispatches this
+task, the trap return mechanism restores the frame and transfers control to
+the entry point with the configured privilege level.
+
+Key differences from cooperative mode include full register state allocation
+rather than minimal callee-saved registers, trap return semantics rather than
+function return, support for privilege level transitions through MPP
+configuration, and proper interrupt state initialization through MPIE bit.
 
 ## Implementation Details
 
@@ -168,10 +223,19 @@ New Task Creation:
 4. Processor state initialized with interrupts enabled
 
 First Task Launch:
-1. `hal_dispatch_init` transfers control from kernel to first task
+
+**Cooperative Mode**:
+1. `hal_dispatch_init` receives lightweight context structure
 2. Global interrupts enabled just before task execution
-3. Timer interrupts activated for preemptive scheduling
-4. Task begins execution at its entry point
+3. Control transfers to first task through standard function call
+4. Task begins execution and voluntarily yields control
+
+**Preemptive Mode**:
+1. `hal_dispatch_init` receives interrupt frame pointer
+2. Timer interrupt enabled for periodic preemption
+3. Dispatcher loads frame and executes trap return instruction
+4. Hardware restores registers and transitions to configured privilege level
+5. Task begins execution and can be preempted by timer
 
 Context Switch Cycle:
 1. Timer interrupt triggers scheduler entry

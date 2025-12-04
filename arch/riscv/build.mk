@@ -74,6 +74,14 @@ HAL_OBJS := boot.o hal.o muldiv.o
 HAL_OBJS := $(addprefix $(BUILD_KERNEL_DIR)/,$(HAL_OBJS))
 deps += $(HAL_OBJS:%.o=%.o.d)
 
+# Architecture-specific syscall entry point requiring direct linkage.
+# Archives only extract objects when symbols are unresolved. Since the generic
+# syscall dispatcher provides a weak symbol, the archive mechanism would skip
+# the strong override. Direct linking ensures the architecture-specific
+# implementation takes precedence at link time.
+ENTRY_OBJ := $(BUILD_KERNEL_DIR)/entry.o
+deps += $(ENTRY_OBJ).d
+
 $(BUILD_KERNEL_DIR)/%.o: $(ARCH_DIR)/%.c | $(BUILD_DIR)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) -o $@ -c -MMD -MF $@.d $<

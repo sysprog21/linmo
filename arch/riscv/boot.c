@@ -94,10 +94,10 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
 }
 
 /* Size of the full trap context frame saved on the stack by the ISR.
- * 30 GPRs (x1, x3-x31) + mcause + mepc = 32 registers * 4 bytes = 128 bytes.
- * This provides a 16-byte aligned full context save.
+ * 30 GPRs (x1, x3-x31) + mcause + mepc + mstatus = 33 words * 4 bytes = 132
+ * bytes. Round up to 144 bytes for 16-byte alignment.
  */
-#define ISR_CONTEXT_SIZE 128
+#define ISR_CONTEXT_SIZE 144
 
 /* Low-level Interrupt Service Routine (ISR) trampoline.
  *
@@ -154,11 +154,15 @@ __attribute__((naked, aligned(4))) void _isr(void)
         "sw  t6,  29*4(sp)\n"
 
         /* Save trap-related CSRs and prepare arguments for do_trap */
-        "csrr   a0, mcause\n" /* Arg 1: cause */
-        "csrr   a1, mepc\n"   /* Arg 2: epc */
-        "mv     a2, sp\n"     /* Arg 3: isr_sp (current stack frame) */
+        "csrr   a0, mcause\n"
+        "csrr   a1, mepc\n"
+        "csrr   a2, mstatus\n" /* For context switching in privilege change */
+
         "sw     a0,  30*4(sp)\n"
         "sw     a1,  31*4(sp)\n"
+        "sw     a2,  32*4(sp)\n"
+
+        "mv     a2, sp\n" /* a2 = isr_sp */
 
         /* Call the high-level C trap handler.
          * Returns: a0 = SP to use for restoring context (may be different
@@ -169,9 +173,13 @@ __attribute__((naked, aligned(4))) void _isr(void)
         /* Use returned SP for context restore (enables context switching) */
         "mv     sp, a0\n"
 
-        /* Restore context. mepc might have been modified by the handler */
-        "lw     a1,  31*4(sp)\n"
-        "csrw   mepc, a1\n"
+        /* Restore mstatus from frame[32] */
+        "lw     t0, 32*4(sp)\n"
+        "csrw   mstatus, t0\n"
+
+        /* Restore mepc from frame[31] (might have been modified by handler) */
+        "lw     t1, 31*4(sp)\n"
+        "csrw   mepc, t1\n"
         "lw  ra,   0*4(sp)\n"
         "lw  gp,   1*4(sp)\n"
         "lw  tp,   2*4(sp)\n"
@@ -208,7 +216,7 @@ __attribute__((naked, aligned(4))) void _isr(void)
 
         /* Return from trap */
         "mret\n"
-        : /* no outputs */
-        : "i"(ISR_CONTEXT_SIZE)
+        :                       /* no outputs */
+        : "i"(ISR_CONTEXT_SIZE) /* +16 for mcause, mepc, mstatus */
         : "memory");
 }

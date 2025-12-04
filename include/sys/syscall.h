@@ -48,7 +48,8 @@
     _(twfi, 40, int, (void) )                                \
     _(tcount, 41, int, (void) )                              \
     _(ticks, 42, int, (void) )                               \
-    _(uptime, 43, int, (void) )
+    _(uptime, 43, int, (void) )                              \
+    _(tputs, 44, int, (const char *str))
 
 /* Generate enumeration of system call numbers */
 #define _(name, num, rettype, arglist) SYS_##name = num,

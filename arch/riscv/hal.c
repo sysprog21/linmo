@@ -35,12 +35,53 @@
 #define CONTEXT_MSTATUS 16 /* Machine Status CSR */
 
 /* Defines the size of the full trap frame saved by the ISR in 'boot.c'.
- * The _isr routine saves 32 registers (30 GPRs + mcause + mepc), resulting
- * in a 128-byte frame. This space MUST be reserved at the top of every task's
- * stack (as a "red zone") to guarantee that an interrupt, even at peak stack
- * usage, will not corrupt memory outside the task's stack bounds.
+ * The _isr routine saves 33 words (30 GPRs + mcause + mepc + mstatus),
+ * resulting in a 144-byte frame with alignment padding. This space MUST be
+ * reserved at the top of every task's stack (as a "red zone") to guarantee
+ * that an interrupt, even at peak stack usage, will not corrupt memory
+ * outside the task's stack bounds.
  */
-#define ISR_STACK_FRAME_SIZE 128
+#define ISR_STACK_FRAME_SIZE 144
+
+/* ISR frame register indices (as 32-bit word offsets from isr_sp).
+ * This layout matches the stack frame created by _isr in boot.c.
+ * Indices are in word offsets (divide byte offset by 4).
+ */
+enum {
+    FRAME_RA = 0,      /* x1  - Return Address */
+    FRAME_GP = 1,      /* x3  - Global Pointer */
+    FRAME_TP = 2,      /* x4  - Thread Pointer */
+    FRAME_T0 = 3,      /* x5  - Temporary register 0 */
+    FRAME_T1 = 4,      /* x6  - Temporary register 1 */
+    FRAME_T2 = 5,      /* x7  - Temporary register 2 */
+    FRAME_S0 = 6,      /* x8  - Saved register 0 / Frame Pointer */
+    FRAME_S1 = 7,      /* x9  - Saved register 1 */
+    FRAME_A0 = 8,      /* x10 - Argument/Return 0 */
+    FRAME_A1 = 9,      /* x11 - Argument/Return 1 */
+    FRAME_A2 = 10,     /* x12 - Argument 2 */
+    FRAME_A3 = 11,     /* x13 - Argument 3 */
+    FRAME_A4 = 12,     /* x14 - Argument 4 */
+    FRAME_A5 = 13,     /* x15 - Argument 5 */
+    FRAME_A6 = 14,     /* x16 - Argument 6 */
+    FRAME_A7 = 15,     /* x17 - Argument 7 / Syscall Number */
+    FRAME_S2 = 16,     /* x18 - Saved register 2 */
+    FRAME_S3 = 17,     /* x19 - Saved register 3 */
+    FRAME_S4 = 18,     /* x20 - Saved register 4 */
+    FRAME_S5 = 19,     /* x21 - Saved register 5 */
+    FRAME_S6 = 20,     /* x22 - Saved register 6 */
+    FRAME_S7 = 21,     /* x23 - Saved register 7 */
+    FRAME_S8 = 22,     /* x24 - Saved register 8 */
+    FRAME_S9 = 23,     /* x25 - Saved register 9 */
+    FRAME_S10 = 24,    /* x26 - Saved register 10 */
+    FRAME_S11 = 25,    /* x27 - Saved register 11 */
+    FRAME_T3 = 26,     /* x28 - Temporary register 3 */
+    FRAME_T4 = 27,     /* x29 - Temporary register 4 */
+    FRAME_T5 = 28,     /* x30 - Temporary register 5 */
+    FRAME_T6 = 29,     /* x31 - Temporary register 6 */
+    FRAME_MCAUSE = 30, /* Machine Cause CSR */
+    FRAME_EPC = 31,    /* Machine Exception PC (mepc) */
+    FRAME_MSTATUS = 32 /* Machine Status CSR */
+};
 
 /* Global variable to hold the new stack pointer for pending context switch.
  * When a context switch is needed, hal_switch_stack() saves the current SP
@@ -238,6 +279,21 @@ void hal_hardware_init(void)
     _stdout_install(__putchar);
     _stdin_install(__getchar);
     _stdpoll_install(__kbhit);
+
+    /* Grant U-mode access to all memory for validation purposes.
+     * By default, RISC-V PMP denies all access to U-mode, which would cause
+     * instruction access faults immediately upon task switch. This minimal
+     * setup allows U-mode tasks to execute and serves as a placeholder until
+     * the full PMP driver is integrated.
+     */
+    uint32_t pmpaddr = -1UL; /* Cover entire address space */
+    uint8_t pmpcfg = 0x0F;   /* TOR, R, W, X enabled */
+
+    asm volatile(
+        "csrw pmpaddr0, %0\n"
+        "csrw pmpcfg0, %1\n"
+        :
+        : "r"(pmpaddr), "r"(pmpcfg));
 }
 
 /* Halts the system in an unrecoverable state */
@@ -321,6 +377,34 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
     } else { /* Synchronous Exception */
         uint32_t code = MCAUSE_GET_CODE(cause);
 
+        /* Handle ecall from U-mode - system calls */
+        if (code == MCAUSE_ECALL_UMODE) {
+            /* Advance mepc past the ecall instruction (4 bytes) */
+            uint32_t new_epc = epc + 4;
+            write_csr(mepc, new_epc);
+
+            /* Extract syscall arguments from ISR frame */
+            uint32_t *f = (uint32_t *) isr_sp;
+
+            int syscall_num = f[FRAME_A7];
+            void *arg1 = (void *) f[FRAME_A0];
+            void *arg2 = (void *) f[FRAME_A1];
+            void *arg3 = (void *) f[FRAME_A2];
+
+            /* Dispatch to syscall implementation via direct table lookup.
+             * Must use do_syscall here instead of syscall() to avoid recursive
+             * traps, as the user-space syscall() may be overridden with ecall.
+             */
+            extern int do_syscall(int num, void *arg1, void *arg2, void *arg3);
+            int retval = do_syscall(syscall_num, arg1, arg2, arg3);
+
+            /* Store return value and updated PC */
+            f[FRAME_A0] = (uint32_t) retval;
+            f[FRAME_EPC] = new_epc;
+
+            return isr_sp;
+        }
+
         /* Handle ecall from M-mode - used for yielding in preemptive mode */
         if (code == MCAUSE_ECALL_MMODE) {
             /* Advance mepc past the ecall instruction (4 bytes) */
@@ -328,12 +412,11 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
             write_csr(mepc, new_epc);
 
             /* Also update mepc in the ISR frame on the stack!
-             * The ISR epilogue will restore mepc from the frame (offset 31*4 =
-             * 124 bytes). If we don't update the frame, mret will jump back to
-             * the ecall instruction!
+             * The ISR epilogue will restore mepc from the frame. If we don't
+             * update the frame, mret will jump back to the ecall instruction!
              */
-            uint32_t *isr_frame = (uint32_t *) isr_sp;
-            isr_frame[31] = new_epc;
+            uint32_t *f = (uint32_t *) isr_sp;
+            f[FRAME_EPC] = new_epc;
 
             /* Invoke dispatcher for context switch - parameter 0 = from ecall,
              * don't increment ticks.
@@ -355,6 +438,7 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
             uint32_t nibble = (epc >> i) & 0xF;
             _putchar(nibble < 10 ? '0' + nibble : 'A' + nibble - 10);
         }
+
         trap_puts("\r\n");
 
         hal_panic();
@@ -409,7 +493,9 @@ extern uint32_t _gp, _end;
  *   0: ra,   4: gp,   8: tp,  12: t0, ... 116: t6
  * 120: mcause, 124: mepc
  */
-void *hal_build_initial_frame(void *stack_top, void (*task_entry)(void))
+void *hal_build_initial_frame(void *stack_top,
+                              void (*task_entry)(void),
+                              int user_mode)
 {
 #define INITIAL_STACK_RESERVE \
     256 /* Reserve space below stack_top for task startup */
@@ -432,11 +518,22 @@ void *hal_build_initial_frame(void *stack_top, void (*task_entry)(void))
     /* Initialize critical registers for proper task startup:
      * - frame[1] = gp: Global pointer, required for accessing global variables
      * - frame[2] = tp: Thread pointer, required for thread-local storage
-     * - frame[31] = mepc: Task entry point, where mret will jump to
+     * - frame[32] = mepc: Task entry point, where mret will jump to
      */
-    frame[1] = (uint32_t) &_gp;        /* gp - global pointer */
-    frame[2] = tp_val;                 /* tp - thread pointer */
-    frame[31] = (uint32_t) task_entry; /* mepc - entry point */
+    frame[1] = (uint32_t) &_gp; /* gp - global pointer */
+    frame[2] = tp_val;          /* tp - thread pointer */
+
+    /* Initialize mstatus for new task:
+     * - MPIE=1: mret will copy this to MIE, enabling interrupts after task
+     * starts
+     * - MPP: Set privilege level (U-mode or M-mode)
+     * - MIE=0: Keep interrupts disabled during frame restoration
+     */
+    uint32_t mstatus_val =
+        MSTATUS_MPIE | (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
+    frame[FRAME_MSTATUS] = mstatus_val;
+
+    frame[FRAME_EPC] = (uint32_t) task_entry; /* mepc - entry point */
 
     return (void *) frame;
 }
@@ -696,37 +793,124 @@ static void __attribute__((naked, used)) __dispatch_init(void)
         "lw  gp,  12*4(a0)\n"
         "lw  tp,  13*4(a0)\n"
         "lw  sp,  14*4(a0)\n"
-        "lw  ra,  15*4(a0)\n"
-        "ret\n"); /* Jump to the task's entry point */
+        "lw  t0,  15*4(a0)\n"
+        "csrw mepc, t0\n" /* Load task entry point into mepc */
+        "mret\n");        /* Jump to the task's entry point */
 }
 
-/* Transfers control from the kernel's main thread to the first task */
-__attribute__((noreturn)) void hal_dispatch_init(jmp_buf env)
+/* Low-level routine to restore context from ISR frame and jump to task.
+ * This is used in preemptive mode where tasks are managed via ISR frames.
+ */
+static void __attribute__((naked, used)) __dispatch_init_isr(void)
 {
-    if (unlikely(!env))
+    asm volatile(
+        /* a0 contains the ISR frame pointer (sp value) */
+        "mv     sp, a0\n"
+
+        /* Restore mstatus from frame[32] */
+        "lw     t0, 32*4(sp)\n"
+        "csrw   mstatus, t0\n"
+
+        /* Restore mepc from frame[31] */
+        "lw     t1, 31*4(sp)\n"
+        "csrw   mepc, t1\n"
+
+        /* Restore all general-purpose registers */
+        "lw  ra,   0*4(sp)\n"
+        "lw  gp,   1*4(sp)\n"
+        "lw  tp,   2*4(sp)\n"
+        "lw  t0,   3*4(sp)\n"
+        "lw  t1,   4*4(sp)\n"
+        "lw  t2,   5*4(sp)\n"
+        "lw  s0,   6*4(sp)\n"
+        "lw  s1,   7*4(sp)\n"
+        "lw  a0,   8*4(sp)\n"
+        "lw  a1,   9*4(sp)\n"
+        "lw  a2,  10*4(sp)\n"
+        "lw  a3,  11*4(sp)\n"
+        "lw  a4,  12*4(sp)\n"
+        "lw  a5,  13*4(sp)\n"
+        "lw  a6,  14*4(sp)\n"
+        "lw  a7,  15*4(sp)\n"
+        "lw  s2,  16*4(sp)\n"
+        "lw  s3,  17*4(sp)\n"
+        "lw  s4,  18*4(sp)\n"
+        "lw  s5,  19*4(sp)\n"
+        "lw  s6,  20*4(sp)\n"
+        "lw  s7,  21*4(sp)\n"
+        "lw  s8,  22*4(sp)\n"
+        "lw  s9,  23*4(sp)\n"
+        "lw  s10, 24*4(sp)\n"
+        "lw  s11, 25*4(sp)\n"
+        "lw  t3,  26*4(sp)\n"
+        "lw  t4,  27*4(sp)\n"
+        "lw  t5,  28*4(sp)\n"
+        "lw  t6,  29*4(sp)\n"
+
+        /* Deallocate stack frame */
+        "addi   sp, sp, %0\n"
+
+        /* Return from trap - jump to task entry point */
+        "mret\n"
+        :
+        : "i"(ISR_STACK_FRAME_SIZE)
+        : "memory");
+}
+
+/* Transfers control from the kernel's main thread to the first task.
+ * In preemptive mode, ctx should be the ISR frame pointer (void *sp).
+ * In cooperative mode, ctx should be the jmp_buf context.
+ */
+__attribute__((noreturn)) void hal_dispatch_init(void *ctx)
+{
+    if (unlikely(!ctx))
         hal_panic(); /* Cannot proceed without valid context */
 
-    if (kcb->preemptive)
+    if (kcb->preemptive) {
+        /* Preemptive mode: ctx is ISR frame pointer, restore from it.
+         * Enable timer before jumping to task. Global interrupts will be
+         * enabled by mret based on MPIE bit in restored mstatus.
+         */
+        /* Save ctx before hal_timer_enable modifies registers */
+        void *saved_ctx = ctx;
+
         hal_timer_enable();
 
-    _ei(); /* Enable global interrupts just before launching the first task */
+        /* Restore ISR frame pointer and call dispatch */
+        asm volatile(
+            "mv    a0, %0\n"             /* Load ISR frame pointer into a0 */
+            "call __dispatch_init_isr\n" /* Restore from ISR frame */
+            :
+            : "r"(saved_ctx)
+            : "a0", "memory");
+    } else {
+        /* Cooperative mode: ctx is jmp_buf, use standard dispatch */
+        _ei(); /* Enable global interrupts */
 
-    asm volatile(
-        "mv  a0, %0\n"           /* Move @env (the task's context) into 'a0' */
-        "call __dispatch_init\n" /* Call the low-level restore routine */
-        :
-        : "r"(env)
-        : "a0", "memory");
+        asm volatile(
+            "mv  a0, %0\n" /* Move @env (the task's context) into 'a0' */
+            "call __dispatch_init\n" /* Call the low-level restore routine */
+            :
+            : "r"(ctx)
+            : "a0", "memory");
+    }
     __builtin_unreachable();
 }
 
 /* Builds an initial 'jmp_buf' context for a brand-new task.
- * @ctx : Pointer to the 'jmp_buf' to initialize (must be valid).
- * @sp  : Base address of the task's stack (must be valid).
- * @ss  : Total size of the stack in bytes (must be > ISR_STACK_FRAME_SIZE).
- * @ra  : The task's entry point function, used as the initial return address.
+ * @ctx       : Pointer to the 'jmp_buf' to initialize (must be valid).
+ * @sp        : Base address of the task's stack (must be valid).
+ * @ss        : Total size of the stack in bytes (must be >
+ * ISR_STACK_FRAME_SIZE).
+ * @ra        : The task's entry point function, used as the initial return
+ * address.
+ * @user_mode : Non-zero to initialize for user mode, zero for machine mode.
  */
-void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra)
+void hal_context_init(jmp_buf *ctx,
+                      size_t sp,
+                      size_t ss,
+                      size_t ra,
+                      int user_mode)
 {
     if (unlikely(!ctx || !sp || ss < (ISR_STACK_FRAME_SIZE + 64) || !ra))
         hal_panic(); /* Invalid parameters - cannot safely initialize context */
@@ -759,12 +943,15 @@ void hal_context_init(jmp_buf *ctx, size_t sp, size_t ss, size_t ra)
     /* Set the essential registers for a new task:
      * - SP is set to the prepared top of the task's stack.
      * - RA is set to the task's entry point.
-     * - mstatus is set to enable interrupts and ensure machine mode.
+     * - mstatus is set to enable interrupts and configure privilege mode.
      *
      * When this context is first restored, the ret instruction will effectively
      * jump to this entry point, starting the task.
      */
     (*ctx)[CONTEXT_SP] = (uint32_t) stack_top;
     (*ctx)[CONTEXT_RA] = (uint32_t) ra;
-    (*ctx)[CONTEXT_MSTATUS] = MSTATUS_MIE | MSTATUS_MPP_MACH;
+    /* Note: CONTEXT_MSTATUS not used in cooperative mode (setjmp/longjmp),
+     * but set it for consistency with ISR frame initialization */
+    (*ctx)[CONTEXT_MSTATUS] =
+        MSTATUS_MPIE | (user_mode ? MSTATUS_MPP_USER : MSTATUS_MPP_MACH);
 }

@@ -446,3 +446,32 @@ char *getline(char *s)
 
     return s;
 }
+
+/* User mode safe formatted output.
+ * Formats string in user space using vsnprintf, then outputs via syscall.
+ * This avoids privilege violations from printf's logger mutex operations.
+ *
+ * Safe for U-mode tasks because:
+ * 1. vsnprintf runs in user space (no privileged operations)
+ * 2. sys_tputs syscall transitions to M-mode for actual output
+ * 3. Kernel handles logger mutex/direct output decision
+ */
+int32_t umode_printf(const char *fmt, ...)
+{
+    char buf[256]; /* Stack buffer for formatted output */
+    va_list args;
+
+    va_start(args, fmt);
+    int32_t len = vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    /* Handle vsnprintf error */
+    if (len < 0)
+        return len;
+
+    /* Output via syscall - safe for U-mode */
+    extern int sys_tputs(const char *str);
+    sys_tputs(buf);
+
+    return len;
+}

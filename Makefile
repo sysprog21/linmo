@@ -29,7 +29,7 @@ deps += $(LIB_OBJS:%.o=%.o.d)
 APPS := coop echo hello mqueues semaphore mutex cond \
         pipes pipes_small pipes_struct prodcons progress \
         rtsched suspend test64 timer timer_kill \
-        cpubench test_libc
+        cpubench test_libc umode
 
 # Output files for __link target
 IMAGE_BASE := $(BUILD_DIR)/image
@@ -66,9 +66,9 @@ $(APPS): %: rebuild $(BUILD_APP_DIR)/%.o linmo
 # Link target - creates all output files
 __link: $(IMAGE_FILES)
 
-$(IMAGE_BASE).elf: $(BUILD_APP_DIR)/*.o $(BUILD_DIR)/liblinmo.a
+$(IMAGE_BASE).elf: $(BUILD_APP_DIR)/*.o $(BUILD_DIR)/liblinmo.a $(ENTRY_OBJ)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(LD) $(LDFLAGS) -T$(LDSCRIPT) -Map $(IMAGE_BASE).map -o $@ $(BUILD_APP_DIR)/*.o -L$(BUILD_DIR) -llinmo
+	$(Q)$(LD) $(LDFLAGS) -T$(LDSCRIPT) -Map $(IMAGE_BASE).map -o $@ $(BUILD_APP_DIR)/*.o $(ENTRY_OBJ) -L$(BUILD_DIR) -llinmo
 
 $(IMAGE_BASE).lst: $(IMAGE_BASE).elf
 	$(VECHO) "  DUMP\t$@\n"
