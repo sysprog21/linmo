@@ -78,6 +78,24 @@ static inline list_node_t *list_cnext(const list_t *list,
 
 /* Push and pop */
 
+/* Pushback list node into list without new node memory allocation */
+static inline void list_pushback_node(list_t *list, list_node_t *target)
+{
+    if (unlikely(!list || !target || target->next))
+        return;
+
+    target->next = list->tail;
+
+    /* Insert before tail sentinel */
+    list_node_t *prev = list->head;
+    while (prev->next != list->tail)
+        prev = prev->next;
+
+    prev->next = target;
+    list->length++;
+    return;
+}
+
 static inline list_node_t *list_pushback(list_t *list, void *data)
 {
     if (unlikely(!list))
@@ -88,15 +106,9 @@ static inline list_node_t *list_pushback(list_t *list, void *data)
         return NULL;
 
     node->data = data;
-    node->next = list->tail;
+    node->next = NULL;
 
-    /* Insert before tail sentinel */
-    list_node_t *prev = list->head;
-    while (prev->next != list->tail)
-        prev = prev->next;
-    prev->next = node;
-
-    list->length++;
+    list_pushback_node(list, node);
     return node;
 }
 
@@ -114,23 +126,35 @@ static inline void *list_pop(list_t *list)
     return data;
 }
 
-/* Remove a specific node; returns its data */
-static inline void *list_remove(list_t *list, list_node_t *target)
+/* Remove a node from list without freeing */
+static inline void list_remove_node(list_t *list, list_node_t *target)
 {
     if (unlikely(!list || !target || list_is_empty(list)))
-        return NULL;
+        return;
 
     list_node_t *prev = list->head;
     while (prev->next != list->tail && prev->next != target)
         prev = prev->next;
 
     if (unlikely(prev->next != target))
-        return NULL; /* node not found */
+        return; /* node not found */
 
     prev->next = target->next;
+    target->next = NULL;
+    list->length--;
+    return;
+}
+
+/* Remove a specific node; returns its data */
+static inline void *list_remove(list_t *list, list_node_t *target)
+{
+    if (unlikely(!list || !target || list_is_empty(list)))
+        return NULL;
+
+    list_remove_node(list, target);
+
     void *data = target->data;
     free(target);
-    list->length--;
     return data;
 }
 
