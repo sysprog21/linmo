@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - main
+      - o1-sched-lauch
   pull_request:
     branches:
-      - main
+      - main 
 
 # Cancel in-progress runs for the same PR/branch
 concurrency:

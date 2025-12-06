@@ -176,7 +176,7 @@ void mo_sem_signal(sem_t *s)
         if (likely(awakened_task)) {
             /* Validate awakened task state consistency */
             if (likely(awakened_task->state == TASK_BLOCKED)) {
-                awakened_task->state = TASK_READY;
+                _sched_block_enqueue(awakened_task);
                 should_yield = true;
             } else {
                 /* Task state inconsistency - this should not happen */
