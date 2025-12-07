@@ -45,20 +45,19 @@ static inline void cond_invalidate(cond_t *c)
  */
 static bool remove_self_from_waiters(list_t *waiters)
 {
-    if (unlikely(!waiters || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!waiters || !kcb || !kcb->task_current))
         return false;
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = tcb_from_global_node(kcb->task_current);
 
     /* Search for and remove self from waiters list */
-    list_node_t *curr = waiters->head->next;
-    while (curr && curr != waiters->tail) {
-        if (curr->data == self) {
-            list_remove(waiters, curr);
+    list_node_t *curr_mutex_node = waiters->head->next;
+    while (curr_mutex_node && curr_mutex_node != waiters->tail) {
+        if (tcb_from_mutex_node(curr_mutex_node) == self) {
+            list_remove(waiters, curr_mutex_node);
             return true;
         }
-        curr = curr->next;
+        curr_mutex_node = curr_mutex_node->next;
     }
     return false;
 }
@@ -66,14 +65,13 @@ static bool remove_self_from_waiters(list_t *waiters)
 /* Atomic block operation with enhanced error checking */
 static void mutex_block_atomic(list_t *waiters)
 {
-    if (unlikely(!waiters || !kcb || !kcb->task_current ||
-                 !kcb->task_current->data))
+    if (unlikely(!waiters || !kcb || !kcb->task_current))
         panic(ERR_SEM_OPERATION);
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = tcb_from_global_node(kcb->task_current);
 
     /* Add to waiters list */
-    if (unlikely(!list_pushback(waiters, self)))
+    if (unlikely(!list_pushback(waiters, &self->mutex_node)))
         panic(ERR_SEM_OPERATION);
 
     /* Block and yield atomically */
@@ -218,8 +216,8 @@ int32_t mo_mutex_timedlock(mutex_t *m, uint32_t ticks)
     }
 
     /* Slow path: must block with timeout using delay mechanism */
-    tcb_t *self = kcb->task_current->data;
-    if (unlikely(!list_pushback(m->waiters, self))) {
+    tcb_t *self = tcb_from_global_node(kcb->task_current);
+    if (unlikely(!list_pushback(m->waiters, &self->mutex_node))) {
         NOSCHED_LEAVE();
         panic(ERR_SEM_OPERATION);
     }
@@ -277,7 +275,8 @@ int32_t mo_mutex_unlock(mutex_t *m)
         m->owner_tid = 0;
     } else {
         /* Transfer ownership to next waiter (FIFO) */
-        tcb_t *next_owner = (tcb_t *) list_pop(m->waiters);
+        list_node_t *next_owner_node = (list_node_t *) list_pop(m->waiters);
+        tcb_t *next_owner = tcb_from_mutex_node(next_owner_node);
         if (likely(next_owner)) {
             /* Validate task state before waking */
             if (likely(next_owner->state == TASK_BLOCKED)) {
@@ -378,11 +377,11 @@ int32_t mo_cond_wait(cond_t *c, mutex_t *m)
     if (unlikely(!mo_mutex_owned_by_current(m)))
         return ERR_NOT_OWNER;
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = tcb_from_global_node(kcb->task_current);
 
     /* Atomically add to wait list */
     NOSCHED_ENTER();
-    if (unlikely(!list_pushback(c->waiters, self))) {
+    if (unlikely(!list_pushback(c->waiters, &self->mutex_node))) {
         NOSCHED_LEAVE();
         panic(ERR_SEM_OPERATION);
     }
@@ -420,11 +419,11 @@ int32_t mo_cond_timedwait(cond_t *c, mutex_t *m, uint32_t ticks)
         return ERR_TIMEOUT;
     }
 
-    tcb_t *self = kcb->task_current->data;
+    tcb_t *self = tcb_from_global_node(kcb->task_current);
 
     /* Atomically add to wait list with timeout */
     NOSCHED_ENTER();
-    if (unlikely(!list_pushback(c->waiters, self))) {
+    if (unlikely(!list_pushback(c->waiters, &self->mutex_node))) {
         NOSCHED_LEAVE();
         panic(ERR_SEM_OPERATION);
     }

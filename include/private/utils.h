@@ -8,6 +8,28 @@
  */
 
 #include <lib/libc.h>
+#include <stddef.h>
+
+/*
+ * container_of - get the pointer to the parent structure from a member pointer
+ *
+ * @ptr:    pointer to the struct member
+ * @type:   type of the parent structure
+ * @member: name of the member within the parent structure
+ *
+ * This macro computes the address of the parent structure by subtracting
+ * the member's offset within the structure.
+ */
+#define container_of(ptr, type, member) \
+    ((type *) ((char *) (ptr) - offsetof(type, member)))
+
+/* tcb list node helpers */
+#define tcb_from_global_node(p) container_of(p, tcb_t, global_node)
+#define tcb_from_mutex_node(p) container_of(p, tcb_t, mutex_node)
+
+/* timer list node helpers */
+#define timer_from_node(p) container_of(p, timer_t, t_node)
+#define timer_from_running_node(p) container_of(p, timer_t, t_running_node)
 
 /* Compiler Optimization Hints
  *

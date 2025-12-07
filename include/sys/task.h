@@ -86,6 +86,10 @@ typedef struct tcb {
 
     /* Stack Protection */
     uint32_t canary; /* Random stack canary for overflow detection */
+
+    /* Embedded nodes */
+    list_node_t global_node; /* Global task list */
+    list_node_t mutex_node;  /* Mutex waiting list */
 } tcb_t;
 
 /* Kernel Control Block (KCB)

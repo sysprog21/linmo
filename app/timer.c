@@ -54,13 +54,22 @@ int32_t app_main(void)
     mo_timer_create(timer_callback, 1000, (void *) 1);
     mo_timer_create(timer_callback, 3000, (void *) 2);
     mo_timer_create(timer_callback, 500, (void *) 3);
+    mo_timer_create(timer_callback, 100, (void *) 4);
 
     /* Start all created timers in auto-reload mode.
      * Note: In this simple case, the IDs will be 0x6000, 0x6001, and 0x6002.
      */
     mo_timer_start(0x6000, TIMER_AUTORELOAD);
-    mo_timer_start(0x6001, TIMER_AUTORELOAD);
+    mo_timer_start(0x6001, TIMER_ONESHOT);
     mo_timer_start(0x6002, TIMER_AUTORELOAD);
+    mo_timer_start(0x6003, TIMER_AUTORELOAD);
+
+    /* Timer destroy to confirm functions workable; now only timer 3 will run
+     * and timer 2 only one shot */
+    mo_timer_destroy(0x6000);
+    mo_timer_cancel(0x6003);
+    /* Destroyed timer can't be resumed */
+    mo_timer_start(0x6000, TIMER_AUTORELOAD);
 
     /* Spawn a single idle task to keep the kernel running. */
     mo_task_spawn(idle_task, DEFAULT_STACK_SIZE);

@@ -298,6 +298,49 @@ void test_mixed_formats(void)
     ASSERT_TEST(buf[test_strlen(buf)] == '\0', "Mixed format null termination");
 }
 
+/* Test 11: List helpers behavior */
+typedef struct {
+    int val;
+    list_node_t node;
+} list_node_item_t;
+
+void test_list_pushback_and_remove(void)
+{
+    list_t *list = list_create();
+
+    list_node_item_t first = {.node.next = NULL, .val = 1};
+    list_node_item_t second = {.node.next = NULL, .val = 2};
+    list_node_item_t third = {.node.next = NULL, .val = 3};
+
+    /* Check node push back normally - unlinked and linked */
+    list_pushback(list, &first.node);
+    ASSERT_TEST(list->length == 1, "Push back first node ");
+
+    list_pushback(list, &second.node);
+    list_node_item_t *item =
+        container_of(list->head->next, list_node_item_t, node);
+    ASSERT_TEST(list->length == 2 && item->val == 1,
+                "Push back second node and order preserved ");
+
+
+    list_pushback(list, &third.node);
+    item = container_of(list->head->next->next->next, list_node_item_t, node);
+    ASSERT_TEST(list->length == 3 && item->val == 3, "Push back third node ");
+
+    /* Remove second node */
+    list_remove(list, &second.node);
+    item = container_of(list->head->next, list_node_item_t, node);
+    ASSERT_TEST(list->length == 2 && item->val == 1, "Remove second node ");
+
+    /* Remove non-existing node (second time) */
+
+    item = container_of(list_pop(list), list_node_item_t, node);
+    ASSERT_TEST(list->length == 1 && item->val == 1, "Pop node ");
+
+    list_clear(list);
+    ASSERT_TEST(list_is_empty(list), "List is cleared ");
+}
+
 void test_runner(void)
 {
     printf("\n=== LibC Test Suite ===\n");
@@ -313,6 +356,7 @@ void test_runner(void)
     test_buffer_boundaries();
     test_isr_safety();
     test_mixed_formats();
+    test_list_pushback_and_remove();
 
     printf("\n=== Test Summary ===\n");
     printf("Tests run:    %d\n", tests_run);

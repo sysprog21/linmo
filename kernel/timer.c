@@ -16,10 +16,10 @@
 #include "private/error.h"
 #include "private/utils.h"
 
-/* Pre-allocated node pool for reduced malloc/free overhead */
+/* Pre-allocated timer pool for reduced malloc/free overhead */
 #define TIMER_NODE_POOL_SIZE 16
-static list_node_t timer_node_pool[TIMER_NODE_POOL_SIZE];
-static uint16_t pool_free_mask = 0xFFFF; /* Bitmask for free nodes */
+static timer_t timer_pool[TIMER_NODE_POOL_SIZE];
+static uint16_t pool_free_mask = 0xFFFF; /* Bitmask for free timers */
 
 /* Master list of all created timers, kept sorted by ID for faster lookup */
 static list_t *all_timers_list = NULL;
@@ -32,30 +32,27 @@ static struct {
 } timer_cache[4];
 static uint8_t timer_cache_index = 0;
 
-/* Get a node from the pool, fall back to malloc if pool is empty */
-static list_node_t *get_timer_node(void)
+/* Get a timer from the pool */
+static timer_t *get_timer(void)
 {
     /* Find first free node in pool */
     for (int i = 0; i < TIMER_NODE_POOL_SIZE; i++) {
         if (pool_free_mask & (1 << i)) {
             pool_free_mask &= ~(1 << i);
-            return &timer_node_pool[i];
+            return &timer_pool[i];
         }
     }
-    /* Pool exhausted, fall back to malloc */
-    return malloc(sizeof(list_node_t));
+    /* Pool exhausted */
+    return NULL;
 }
 
-/* Return a node to the pool, or free if it's not from pool */
-static void return_timer_node(list_node_t *node)
+/* Return the timer to the pool, mark only */
+static void return_timer(timer_t *timer)
 {
     /* Check if node is from our pool */
-    if (node >= timer_node_pool &&
-        node < timer_node_pool + TIMER_NODE_POOL_SIZE) {
-        int index = node - timer_node_pool;
+    if (timer >= timer_pool && timer < timer_pool + TIMER_NODE_POOL_SIZE) {
+        int index = (timer - &timer_pool[0]);
         pool_free_mask |= (1 << index);
-    } else {
-        free(node);
     }
 }
 
@@ -105,10 +102,10 @@ static int32_t timer_subsystem_init(void)
         return ERR_FAIL;
     }
 
-    /* Initialize node pool */
+    /* Initialize timer pool */
+
     for (int i = 0; i < TIMER_NODE_POOL_SIZE; i++) {
-        timer_node_pool[i].data = NULL;
-        timer_node_pool[i].next = NULL;
+        memset(&timer_pool[i], 0, sizeof(timer_t));
     }
 
     timer_initialized = true;
@@ -116,55 +113,40 @@ static int32_t timer_subsystem_init(void)
     return ERR_OK;
 }
 
-/* Fast removal of timer from active list by data pointer */
-static void timer_remove_item_by_data(list_t *list, void *data)
+/* Fast removal of timer from active list */
+static void timer_remove_from_running_list(list_t *list, timer_t *t)
 {
     if (unlikely(!list || list_is_empty(list)))
         return;
 
-    list_node_t *prev = list->head;
-    list_node_t *curr = prev->next;
-
-    while (curr != list->tail) {
-        if (curr->data == data) {
-            prev->next = curr->next;
-            return_timer_node(curr);
-            list->length--;
-            return;
-        }
-        prev = curr;
-        curr = curr->next;
-    }
+    list_remove(list, &t->t_running_node);
 }
 
-/* Sorted insert with early termination for common cases */
-static int32_t timer_sorted_insert(timer_t *timer)
+/* Insert timer into the running timer list */
+static int32_t timer_sorted_insert_running_list(timer_t *timer)
 {
-    list_node_t *new_node = get_timer_node();
-    if (unlikely(!new_node))
+    if (unlikely(!timer || timer->t_running_node.next))
         return ERR_FAIL;
-    new_node->data = timer;
-
     /* Fast path: if list is empty or timer should go at end */
     list_node_t *prev = kcb->timer_list->head;
     if (prev->next == kcb->timer_list->tail) {
         /* Empty list */
-        new_node->next = kcb->timer_list->tail;
-        prev->next = new_node;
+        timer->t_running_node.next = kcb->timer_list->tail;
+        prev->next = &timer->t_running_node;
         kcb->timer_list->length++;
         return ERR_OK;
     }
 
     /* Find insertion point */
     while (prev->next != kcb->timer_list->tail) {
-        timer_t *current_timer = (timer_t *) prev->next->data;
+        timer_t *current_timer = timer_from_running_node(prev->next);
         if (timer->deadline_ticks < current_timer->deadline_ticks)
             break;
         prev = prev->next;
     }
 
-    new_node->next = prev->next;
-    prev->next = new_node;
+    timer->t_running_node.next = prev->next;
+    prev->next = &timer->t_running_node;
     kcb->timer_list->length++;
     return ERR_OK;
 }
@@ -183,7 +165,7 @@ static timer_t *timer_find_by_id_fast(uint16_t id)
     /* Linear search for now - could be optimized to binary search if needed */
     list_node_t *node = all_timers_list->head->next;
     while (node != all_timers_list->tail) {
-        timer_t *timer = (timer_t *) node->data;
+        timer_t *timer = timer_from_node(node);
         if (timer->id == id) {
             cache_timer(id, timer);
             return timer;
@@ -204,7 +186,7 @@ static list_node_t *timer_find_node_by_id(uint16_t id)
 
     list_node_t *node = all_timers_list->head->next;
     while (node != all_timers_list->tail) {
-        if (((timer_t *) node->data)->id == id)
+        if (timer_from_node(node)->id == id)
             return node;
         node = node->next;
     }
@@ -219,22 +201,21 @@ void _timer_tick_handler(void)
     if (unlikely(!timer_initialized || !kcb->timer_list ||
                  list_is_empty(kcb->timer_list)))
         return;
-
     uint32_t now = mo_ticks();
-    timer_t *expired_timers[TIMER_BATCH_SIZE]; /* Smaller batch size */
+    list_node_t *
+        expired_timers_running_nodes[TIMER_BATCH_SIZE]; /* Smaller batch size */
     int expired_count = 0;
 
     /* Collect expired timers in one pass, limited to batch size */
     while (!list_is_empty(kcb->timer_list) &&
            expired_count < TIMER_BATCH_SIZE) {
         list_node_t *node = kcb->timer_list->head->next;
-        timer_t *t = (timer_t *) node->data;
+        timer_t *t = timer_from_running_node(node);
 
         if (now >= t->deadline_ticks) {
-            expired_timers[expired_count++] = t;
-            kcb->timer_list->head->next = node->next;
-            kcb->timer_list->length--;
-            return_timer_node(node);
+            expired_timers_running_nodes[expired_count++] =
+                list_pop(kcb->timer_list);
+
         } else {
             /* First timer not expired, so none further down are */
             break;
@@ -243,7 +224,8 @@ void _timer_tick_handler(void)
 
     /* Process all expired timers */
     for (int i = 0; i < expired_count; i++) {
-        timer_t *t = expired_timers[i];
+        list_node_t *expired_running_node = expired_timers_running_nodes[i];
+        timer_t *t = timer_from_running_node(expired_running_node);
 
         /* Execute callback */
         if (likely(t->callback))
@@ -254,7 +236,8 @@ void _timer_tick_handler(void)
             /* Calculate next expected fire tick to prevent cumulative error */
             t->last_expected_fire_tick += MS_TO_TICKS(t->period_ms);
             t->deadline_ticks = t->last_expected_fire_tick;
-            timer_sorted_insert(t); /* Re-insert for next expiration */
+            /* Re-insert for next expiration */
+            timer_sorted_insert_running_list(t);
         } else {
             t->mode = TIMER_DISABLED; /* One-shot timers are done */
         }
@@ -262,26 +245,24 @@ void _timer_tick_handler(void)
 }
 
 /* Insert timer into sorted position in all_timers_list */
-static int32_t timer_insert_sorted_by_id(timer_t *timer)
+static void timer_insert_sorted_timer_list(timer_t *timer)
 {
-    list_node_t *new_node = get_timer_node();
-    if (unlikely(!new_node))
-        return ERR_FAIL;
-    new_node->data = timer;
+    if (unlikely(!timer || timer->t_node.next))
+        return;
 
     /* Find insertion point to maintain ID sort order */
     list_node_t *prev = all_timers_list->head;
     while (prev->next != all_timers_list->tail) {
-        timer_t *current = (timer_t *) prev->next->data;
+        timer_t *current = timer_from_node(prev->next);
         if (timer->id < current->id)
             break;
         prev = prev->next;
     }
 
-    new_node->next = prev->next;
-    prev->next = new_node;
+    timer->t_node.next = prev->next;
+    prev->next = &timer->t_node;
     all_timers_list->length++;
-    return ERR_OK;
+    return;
 }
 
 int32_t mo_timer_create(void *(*callback)(void *arg),
@@ -295,8 +276,9 @@ int32_t mo_timer_create(void *(*callback)(void *arg),
     if (unlikely(timer_subsystem_init() != ERR_OK))
         return ERR_FAIL;
 
-    timer_t *t = malloc(sizeof(timer_t));
-    if (unlikely(!t))
+    /* Try to get a static timer from the pool */
+    timer_t *t = get_timer();
+    if (!t)
         return ERR_FAIL;
 
     NOSCHED_ENTER();
@@ -310,13 +292,11 @@ int32_t mo_timer_create(void *(*callback)(void *arg),
     t->last_expected_fire_tick = 0;
     t->mode = TIMER_DISABLED;
     t->_reserved = 0;
+    t->t_node.next = NULL;
+    t->t_running_node.next = NULL;
 
     /* Insert into sorted all_timers_list */
-    if (unlikely(timer_insert_sorted_by_id(t) != ERR_OK)) {
-        NOSCHED_LEAVE();
-        free(t);
-        return ERR_FAIL;
-    }
+    timer_insert_sorted_timer_list(t);
 
     /* Add to cache */
     cache_timer(t->id, t);
@@ -338,11 +318,11 @@ int32_t mo_timer_destroy(uint16_t id)
         return ERR_FAIL;
     }
 
-    timer_t *t = (timer_t *) node->data;
+    timer_t *t = timer_from_node(node);
 
     /* Remove from active list if running */
     if (t->mode != TIMER_DISABLED)
-        timer_remove_item_by_data(kcb->timer_list, t);
+        timer_remove_from_running_list(kcb->timer_list, t);
 
     /* Remove from cache */
     for (int i = 0; i < 4; i++) {
@@ -362,9 +342,7 @@ int32_t mo_timer_destroy(uint16_t id)
         all_timers_list->length--;
     }
 
-    free(t);
-    return_timer_node(node);
-
+    return_timer(t);
     NOSCHED_LEAVE();
     return ERR_OK;
 }
@@ -386,18 +364,14 @@ int32_t mo_timer_start(uint16_t id, uint8_t mode)
 
     /* Remove from active list if already running */
     if (t->mode != TIMER_DISABLED)
-        timer_remove_item_by_data(kcb->timer_list, t);
+        timer_remove_from_running_list(kcb->timer_list, t);
 
     /* Configure and start timer */
     t->mode = mode;
     t->last_expected_fire_tick = mo_ticks() + MS_TO_TICKS(t->period_ms);
     t->deadline_ticks = t->last_expected_fire_tick;
 
-    if (unlikely(timer_sorted_insert(t) != ERR_OK)) {
-        t->mode = TIMER_DISABLED;
-        NOSCHED_LEAVE();
-        return ERR_FAIL;
-    }
+    timer_sorted_insert_running_list(t);
 
     NOSCHED_LEAVE();
     return ERR_OK;
@@ -416,7 +390,7 @@ int32_t mo_timer_cancel(uint16_t id)
         return ERR_FAIL;
     }
 
-    timer_remove_item_by_data(kcb->timer_list, t);
+    timer_remove_from_running_list(kcb->timer_list, t);
     t->mode = TIMER_DISABLED;
 
     NOSCHED_LEAVE();

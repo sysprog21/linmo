@@ -29,7 +29,7 @@ deps += $(LIB_OBJS:%.o=%.o.d)
 APPS := coop echo hello mqueues semaphore mutex cond \
         pipes pipes_small pipes_struct prodcons progress \
         rtsched suspend test64 timer timer_kill \
-        cpubench test_libc umode
+        cpubench test_utils umode
 
 # Output files for __link target
 IMAGE_BASE := $(BUILD_DIR)/image
