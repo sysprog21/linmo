@@ -1054,3 +1054,22 @@ void _sched_block(queue_t *wait_q)
     self->state = TASK_BLOCKED;
     _yield();
 }
+
+/* Atomic block operation with enhanced error checking, mainly used in mutex
+ * operations */
+void mutex_block_atomic(list_t *waiters)
+{
+    if (unlikely(!waiters || !kcb || !kcb->task_current ||
+                 !kcb->task_current->data))
+        panic(ERR_SEM_OPERATION);
+
+    tcb_t *self = kcb->task_current->data;
+
+    /* Add to waiters list */
+    if (unlikely(!list_pushback(waiters, self)))
+        panic(ERR_SEM_OPERATION);
+
+    /* Block and yield atomically */
+    self->state = TASK_BLOCKED;
+    _yield(); /* This releases NOSCHED when we context switch */
+}

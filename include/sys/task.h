@@ -299,6 +299,15 @@ uint64_t mo_uptime(void);
  */
 void _sched_block(queue_t *wait_q);
 
+/* Atomically blocks the current task and invokes the scheduler.
+ *
+ * This internal kernel primitive is the basis for all blocking operations.
+ * Support for mutex lock data structure.
+ *
+ * @waiters : The wait list to which the current task will be added
+ */
+void mutex_block_atomic(list_t *waiters);
+
 /* Application Entry Point */
 
 /* The main entry point for the user application.
