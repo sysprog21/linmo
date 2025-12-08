@@ -1,5 +1,7 @@
 #include <linmo.h>
 
+int32_t task0_id, task1_id, task2_id;
+
 void task2(void)
 {
     int32_t cnt = 0;
@@ -16,14 +18,14 @@ void task1(void)
     while (1) {
         printf("[task %d %ld]\n", mo_task_id(), cnt++);
         if (cnt == 2000) {
-            val = mo_task_resume(2);
+            val = mo_task_resume(task2_id);
             if (val == 0)
                 printf("TASK 2 RESUMED!\n");
             else
                 printf("FAILED TO RESUME TASK 2\n");
         }
         if (cnt == 6000) {
-            val = mo_task_resume(0);
+            val = mo_task_resume(task0_id);
             if (val == 0)
                 printf("TASK 0 RESUMED!\n");
             else
@@ -39,7 +41,7 @@ void task0(void)
     while (1) {
         printf("[task %d %ld]\n", mo_task_id(), cnt++);
         if (cnt == 1000) {
-            val = mo_task_suspend(2);
+            val = mo_task_suspend(task2_id);
             if (val == 0)
                 printf("TASK 2 SUSPENDED!\n");
             else
@@ -54,9 +56,9 @@ void task0(void)
 
 int32_t app_main(void)
 {
-    mo_task_spawn(task0, DEFAULT_STACK_SIZE);
-    mo_task_spawn(task1, DEFAULT_STACK_SIZE);
-    mo_task_spawn(task2, DEFAULT_STACK_SIZE);
+    task0_id = mo_task_spawn(task0, DEFAULT_STACK_SIZE);
+    task1_id = mo_task_spawn(task1, DEFAULT_STACK_SIZE);
+    task2_id = mo_task_spawn(task2, DEFAULT_STACK_SIZE);
 
     /* preemptive mode */
     return 1;
