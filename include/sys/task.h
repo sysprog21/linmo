@@ -86,6 +86,10 @@ typedef struct tcb {
 
     /* Stack Protection */
     uint32_t canary; /* Random stack canary for overflow detection */
+
+    /* State transition support */
+    /* Ready queue membership node (only one per task) */
+    list_node_t rq_node;
 } tcb_t;
 
 /* Kernel Control Block (KCB)
@@ -108,14 +112,18 @@ typedef struct {
     /* Timer Management */
     list_t *timer_list;      /* List of active software timers */
     volatile uint32_t ticks; /* Global system tick, incremented by timer */
+
+    /* Scheduling attributions */
+    uint8_t ready_bitmap; /* 8-bit priority bitmap */
+    list_t
+        *ready_queues[TASK_PRIORITY_LEVELS]; /* Separate queue per priority */
+    list_node_t *rr_cursors[TASK_PRIORITY_LEVELS]; /* Round-robin position */
 } kcb_t;
 
 /* Global pointer to the singleton Kernel Control Block */
 extern kcb_t *kcb;
 
 /* System Configuration Constants */
-#define SCHED_IMAX \
-    500 /* Safety limit for scheduler iterations to prevent livelock */
 #define MIN_TASK_STACK_SIZE \
     256 /* Minimum stack size to prevent stack overflow */
 #define TASK_CACHE_SIZE \
@@ -298,6 +306,14 @@ uint64_t mo_uptime(void);
  * @wait_q : The wait queue to which the current task will be added
  */
 void _sched_block(queue_t *wait_q);
+
+/* Dequeue path for task with TASK_BLOCKED state. It must be called before task
+ * state set as TASK_BLOCKED. Currently, this API is used in mutex lock case.*/
+void _sched_block_dequeue(tcb_t *blocked_task);
+
+/* Enqueue path for the task with TASK_BLOCKED state. This API is the mainly
+ * enqueuing path for semaphore and mutex operations. */
+void _sched_block_enqueue(tcb_t *blocked_task);
 
 /* Application Entry Point */
 
