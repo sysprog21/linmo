@@ -59,6 +59,9 @@ enum task_states {
 #define TASK_TIMESLICE_LOW 10     /* Low priority: longer slice */
 #define TASK_TIMESLICE_IDLE 15    /* Idle tasks: longest slice */
 
+/* Forward declaration */
+struct memspace;
+
 /* Task Control Block (TCB)
  *
  * Contains all essential information about a single task, including saved
@@ -72,6 +75,8 @@ typedef struct tcb {
     size_t stack_sz; /* Total size of the stack in bytes */
     void (*entry)(void); /* Task's entry point function */
 
+    /* Memory Protection */
+    struct memspace *mspace; /* Memory space for task isolation */
     /* Scheduling Parameters */
     uint16_t prio;      /* Encoded priority (base and time slice counter) */
     uint8_t prio_level; /* Priority level (0-7, 0 = highest) */
