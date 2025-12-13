@@ -130,7 +130,7 @@ void *hal_build_initial_frame(void *stack_top,
                                     ISR_STACK_FRAME_SIZE);
 
     /* Initialize all general purpose registers to zero */
-    for (int i = 0; i < 32; i++)
+    for (int i = 0; i < 36; i++)
         frame[i] = 0;
 
     /* Compute thread pointer: aligned to 64 bytes from _end */
