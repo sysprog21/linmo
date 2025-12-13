@@ -109,14 +109,14 @@ void hal_context_restore(jmp_buf env, int32_t val); /* Restore context + process
 The ISR in `boot.c` performs a complete context save of all registers:
 
 ```
-Stack Frame Layout (144 bytes, 33 words × 4 bytes, offsets from sp):
+Stack Frame Layout (144 bytes, 36 words × 4 bytes, offsets from sp):
   0: ra,   4: gp,   8: tp,  12: t0,  16: t1,  20: t2
  24: s0,  28: s1,  32: a0,  36: a1,  40: a2,  44: a3
  48: a4,  52: a5,  56: a6,  60: a7,  64: s2,  68: s3
  72: s4,  76: s5,  80: s6,  84: s7,  88: s8,  92: s9
  96: s10, 100:s11, 104:t3, 108: t4, 112: t5, 116: t6
-120: mcause, 124: mepc, 128: mstatus
-132-143: padding (12 bytes for 16-byte alignment)
+120: mcause, 124: mepc, 128: mstatus, 132: sp (for restore)
+136-143: padding (8 bytes for 16-byte alignment)
 ```
 
 Why full context save in ISR?
@@ -129,7 +129,7 @@ Why full context save in ISR?
 
 Each task stack must reserve space for the ISR frame:
 ```c
-#define ISR_STACK_FRAME_SIZE 144  /* 33 words × 4 bytes, 16-byte aligned */
+#define ISR_STACK_FRAME_SIZE 144  /* 36 words × 4 bytes, 16-byte aligned */
 ```
 
 This "red zone" is reserved at the top of every task stack to guarantee ISR safety.
