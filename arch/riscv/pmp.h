@@ -42,6 +42,9 @@ typedef struct {
 
 /* PMP Management Functions */
 
+/* Returns pointer to global PMP configuration */
+pmp_config_t *pmp_get_config(void);
+
 /* Initializes the PMP hardware and configuration state.
  * @config : Pointer to pmp_config_t structure to be initialized.
  * Returns 0 on success, or negative error code on failure.

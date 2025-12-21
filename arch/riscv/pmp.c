@@ -187,6 +187,14 @@ static const mempool_t kernel_mempools[] = {
 #define KERNEL_MEMPOOL_COUNT \
     (sizeof(kernel_mempools) / sizeof(kernel_mempools[0]))
 
+/* Global PMP configuration (shadow of hardware state) */
+static pmp_config_t pmp_global_config;
+
+pmp_config_t *pmp_get_config(void)
+{
+    return &pmp_global_config;
+}
+
 int32_t pmp_init_pools(pmp_config_t *config,
                        const mempool_t *pools,
                        size_t count)
