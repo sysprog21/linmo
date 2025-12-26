@@ -56,6 +56,12 @@ int32_t mo_evict_fpage(fpage_t *fpage)
     return pmp_evict_fpage(fpage);
 }
 
+/* Handles memory access faults */
+int32_t mo_handle_access_fault(uint32_t fault_addr, uint8_t is_write)
+{
+    return pmp_handle_access_fault(fault_addr, is_write);
+}
+
 /* Creates and initializes a memory space */
 memspace_t *mo_memspace_create(uint32_t as_id, uint32_t shared)
 {

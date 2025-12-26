@@ -128,3 +128,15 @@ int32_t pmp_load_fpage(fpage_t *fpage, uint8_t region_idx);
  * Returns 0 on success, or negative error code on failure.
  */
 int32_t pmp_evict_fpage(fpage_t *fpage);
+
+/* Handles PMP access violations.
+ *
+ * Attempts to recover from PMP access faults by loading the required memory
+ * region into a hardware PMP region. If all 16 regions are in use, selects a
+ * victim for eviction and reuses its region.
+ *
+ * @fault_addr : The faulting memory address (from mtval CSR)
+ * @is_write : 1 for store/AMO access, 0 for load
+ * Returns 0 on successful recovery, negative error code on failure.
+ */
+int32_t pmp_handle_access_fault(uint32_t fault_addr, uint8_t is_write);

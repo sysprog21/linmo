@@ -16,7 +16,7 @@ extern uint32_t _sbss, _ebss;
 
 /* C entry points */
 void main(void);
-void do_trap(uint32_t cause, uint32_t epc);
+void do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp);
 void hal_panic(void);
 
 /* Machine-mode entry point ('_entry'). This is the first code executed on

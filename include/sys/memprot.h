@@ -120,3 +120,15 @@ int32_t mo_load_fpage(fpage_t *fpage, uint8_t region_idx);
  * Returns 0 on success, or negative error code on failure.
  */
 int32_t mo_evict_fpage(fpage_t *fpage);
+
+/* Handles memory access faults.
+ *
+ * Attempts to recover from access faults by loading the required memory
+ * region into a hardware region. If all regions are in use, selects a
+ * victim for eviction and reuses its region.
+ *
+ * @fault_addr : The faulting memory address
+ * @is_write : 1 for write access, 0 for read access
+ * Returns 0 on successful recovery, negative error code on failure.
+ */
+int32_t mo_handle_access_fault(uint32_t fault_addr, uint8_t is_write);

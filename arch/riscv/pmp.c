@@ -5,6 +5,7 @@
 
 #include <hal.h>
 #include <lib/libc.h>
+#include <sys/task.h>
 
 #include "csr.h"
 #include "pmp.h"
@@ -472,7 +473,7 @@ int32_t pmp_check_access(const pmp_config_t *config,
  * @mspace : Pointer to memory space
  * Returns pointer to victim flexpage, or NULL if no evictable page found.
  */
-static fpage_t __attribute__((unused)) * select_victim_fpage(memspace_t *mspace)
+static fpage_t *select_victim_fpage(memspace_t *mspace)
 {
     if (!mspace)
         return NULL;
@@ -540,4 +541,42 @@ int32_t pmp_evict_fpage(fpage_t *fpage)
     }
 
     return ret;
+}
+
+/* Handles PMP access faults */
+int32_t pmp_handle_access_fault(uint32_t fault_addr, uint8_t is_write)
+{
+    if (!kcb || !kcb->task_current || !kcb->task_current->data)
+        return -1;
+
+    memspace_t *mspace = ((tcb_t *) kcb->task_current->data)->mspace;
+    if (!mspace)
+        return -1;
+
+    /* Find flexpage containing faulting address */
+    fpage_t *target_fpage = NULL;
+    for (fpage_t *fp = mspace->first; fp; fp = fp->as_next) {
+        if (fault_addr >= fp->base && fault_addr < (fp->base + fp->size)) {
+            target_fpage = fp;
+            break;
+        }
+    }
+
+    if (!target_fpage || target_fpage->pmp_id != 0)
+        return -1;
+
+    pmp_config_t *config = pmp_get_config();
+    if (!config)
+        return -1;
+
+    /* Load into available region or evict victim */
+    if (config->next_region_idx < PMP_MAX_REGIONS)
+        return pmp_load_fpage(target_fpage, config->next_region_idx);
+
+    fpage_t *victim = select_victim_fpage(mspace);
+    if (!victim)
+        return -1;
+
+    int32_t ret = pmp_evict_fpage(victim);
+    return (ret == 0) ? pmp_load_fpage(target_fpage, victim->pmp_id) : ret;
 }

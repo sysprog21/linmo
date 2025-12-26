@@ -3,6 +3,7 @@
 #include <sys/task.h>
 
 #include "csr.h"
+#include "pmp.h"
 #include "private/stdio.h"
 #include "private/utils.h"
 
@@ -426,6 +427,16 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
 
             /* Return the SP to use - new task's frame or current frame */
             return pending_switch_sp ? (uint32_t) pending_switch_sp : isr_sp;
+        }
+
+        /* Attempt to recover PMP access faults (code 5 = load fault, 7 = store
+         * fault) */
+        if (code == 5 || code == 7) {
+            uint32_t mtval = read_csr(mtval);
+            if (pmp_handle_access_fault(mtval, code == 7) == 0) {
+                /* PMP fault handled successfully, return current frame */
+                return isr_sp;
+            }
         }
 
         /* Print exception info via direct UART (safe in trap context) */
