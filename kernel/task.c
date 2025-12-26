@@ -8,6 +8,7 @@
 #include <hal.h>
 #include <lib/libc.h>
 #include <lib/queue.h>
+#include <pmp.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -616,6 +617,9 @@ void dispatch(void)
         next_task->state = TASK_RUNNING;
     next_task->time_slice = get_priority_timeslice(next_task->prio_level);
 
+    /* Switch PMP configuration if tasks have different memory spaces */
+    pmp_switch_context(prev_task->mspace, next_task->mspace);
+
     /* Perform context switch based on scheduling mode */
     if (kcb->preemptive) {
         /* Same task - no context switch needed */
@@ -675,7 +679,15 @@ void yield(void)
     /* In cooperative mode, delays are only processed on an explicit yield. */
     list_foreach(kcb->tasks, delay_update, NULL);
 
+    /* Save current task before scheduler modifies task_current */
+    tcb_t *prev_task = (tcb_t *) kcb->task_current->data;
+
     sched_select_next_task(); /* Use O(1) priority scheduler */
+
+    /* Switch PMP configuration if tasks have different memory spaces */
+    tcb_t *next_task = (tcb_t *) kcb->task_current->data;
+    pmp_switch_context(prev_task->mspace, next_task->mspace);
+
     hal_context_restore(((tcb_t *) kcb->task_current->data)->context, 1);
 }
 
@@ -747,6 +759,30 @@ static int32_t task_spawn_impl(void *task_entry,
         free(tcb);
         panic(ERR_STACK_ALLOC);
     }
+
+    /* Create memory space for task */
+    tcb->mspace = mo_memspace_create(kcb->next_tid, 0);
+    if (!tcb->mspace) {
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Register stack as flexpage */
+    fpage_t *stack_fpage =
+        mo_fpage_create((uint32_t) tcb->stack, new_stack_size,
+                        PMPCFG_R | PMPCFG_W, PMP_PRIORITY_STACK);
+    if (!stack_fpage) {
+        mo_memspace_destroy(tcb->mspace);
+        free(tcb->stack);
+        free(tcb);
+        panic(ERR_TCB_ALLOC);
+    }
+
+    /* Add stack to memory space */
+    stack_fpage->as_next = tcb->mspace->first;
+    tcb->mspace->first = stack_fpage;
+    tcb->mspace->pmp_stack = stack_fpage;
 
     /* Minimize critical section duration */
     CRITICAL_ENTER();
