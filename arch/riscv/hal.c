@@ -3,6 +3,7 @@
 #include <sys/task.h>
 
 #include "csr.h"
+#include "pmp.h"
 #include "private/stdio.h"
 #include "private/utils.h"
 
@@ -48,39 +49,40 @@
  * Indices are in word offsets (divide byte offset by 4).
  */
 enum {
-    FRAME_RA = 0,      /* x1  - Return Address */
-    FRAME_GP = 1,      /* x3  - Global Pointer */
-    FRAME_TP = 2,      /* x4  - Thread Pointer */
-    FRAME_T0 = 3,      /* x5  - Temporary register 0 */
-    FRAME_T1 = 4,      /* x6  - Temporary register 1 */
-    FRAME_T2 = 5,      /* x7  - Temporary register 2 */
-    FRAME_S0 = 6,      /* x8  - Saved register 0 / Frame Pointer */
-    FRAME_S1 = 7,      /* x9  - Saved register 1 */
-    FRAME_A0 = 8,      /* x10 - Argument/Return 0 */
-    FRAME_A1 = 9,      /* x11 - Argument/Return 1 */
-    FRAME_A2 = 10,     /* x12 - Argument 2 */
-    FRAME_A3 = 11,     /* x13 - Argument 3 */
-    FRAME_A4 = 12,     /* x14 - Argument 4 */
-    FRAME_A5 = 13,     /* x15 - Argument 5 */
-    FRAME_A6 = 14,     /* x16 - Argument 6 */
-    FRAME_A7 = 15,     /* x17 - Argument 7 / Syscall Number */
-    FRAME_S2 = 16,     /* x18 - Saved register 2 */
-    FRAME_S3 = 17,     /* x19 - Saved register 3 */
-    FRAME_S4 = 18,     /* x20 - Saved register 4 */
-    FRAME_S5 = 19,     /* x21 - Saved register 5 */
-    FRAME_S6 = 20,     /* x22 - Saved register 6 */
-    FRAME_S7 = 21,     /* x23 - Saved register 7 */
-    FRAME_S8 = 22,     /* x24 - Saved register 8 */
-    FRAME_S9 = 23,     /* x25 - Saved register 9 */
-    FRAME_S10 = 24,    /* x26 - Saved register 10 */
-    FRAME_S11 = 25,    /* x27 - Saved register 11 */
-    FRAME_T3 = 26,     /* x28 - Temporary register 3 */
-    FRAME_T4 = 27,     /* x29 - Temporary register 4 */
-    FRAME_T5 = 28,     /* x30 - Temporary register 5 */
-    FRAME_T6 = 29,     /* x31 - Temporary register 6 */
-    FRAME_MCAUSE = 30, /* Machine Cause CSR */
-    FRAME_EPC = 31,    /* Machine Exception PC (mepc) */
-    FRAME_MSTATUS = 32 /* Machine Status CSR */
+    FRAME_RA = 0,       /* x1  - Return Address */
+    FRAME_GP = 1,       /* x3  - Global Pointer */
+    FRAME_TP = 2,       /* x4  - Thread Pointer */
+    FRAME_T0 = 3,       /* x5  - Temporary register 0 */
+    FRAME_T1 = 4,       /* x6  - Temporary register 1 */
+    FRAME_T2 = 5,       /* x7  - Temporary register 2 */
+    FRAME_S0 = 6,       /* x8  - Saved register 0 / Frame Pointer */
+    FRAME_S1 = 7,       /* x9  - Saved register 1 */
+    FRAME_A0 = 8,       /* x10 - Argument/Return 0 */
+    FRAME_A1 = 9,       /* x11 - Argument/Return 1 */
+    FRAME_A2 = 10,      /* x12 - Argument 2 */
+    FRAME_A3 = 11,      /* x13 - Argument 3 */
+    FRAME_A4 = 12,      /* x14 - Argument 4 */
+    FRAME_A5 = 13,      /* x15 - Argument 5 */
+    FRAME_A6 = 14,      /* x16 - Argument 6 */
+    FRAME_A7 = 15,      /* x17 - Argument 7 / Syscall Number */
+    FRAME_S2 = 16,      /* x18 - Saved register 2 */
+    FRAME_S3 = 17,      /* x19 - Saved register 3 */
+    FRAME_S4 = 18,      /* x20 - Saved register 4 */
+    FRAME_S5 = 19,      /* x21 - Saved register 5 */
+    FRAME_S6 = 20,      /* x22 - Saved register 6 */
+    FRAME_S7 = 21,      /* x23 - Saved register 7 */
+    FRAME_S8 = 22,      /* x24 - Saved register 8 */
+    FRAME_S9 = 23,      /* x25 - Saved register 9 */
+    FRAME_S10 = 24,     /* x26 - Saved register 10 */
+    FRAME_S11 = 25,     /* x27 - Saved register 11 */
+    FRAME_T3 = 26,      /* x28 - Temporary register 3 */
+    FRAME_T4 = 27,      /* x29 - Temporary register 4 */
+    FRAME_T5 = 28,      /* x30 - Temporary register 5 */
+    FRAME_T6 = 29,      /* x31 - Temporary register 6 */
+    FRAME_MCAUSE = 30,  /* Machine Cause CSR */
+    FRAME_EPC = 31,     /* Machine Exception PC (mepc) */
+    FRAME_MSTATUS = 32, /* Machine Status CSR */
+    FRAME_SP = 33       /* Stack Pointer (saved for restore) */
 };
 
 /* Global variable to hold the new stack pointer for pending context switch.
@@ -273,27 +275,18 @@ static void uart_init(uint32_t baud)
 void hal_hardware_init(void)
 {
     uart_init(USART_BAUD);
+
+    /* Initialize PMP hardware with kernel memory regions */
+    pmp_config_t *pmp_config = pmp_get_config();
+    if (pmp_init_kernel(pmp_config) != 0)
+        hal_panic();
+
     /* Set the first timer interrupt. Subsequent interrupts are set in ISR */
     mtimecmp_w(mtime_r() + (F_CPU / F_TIMER));
     /* Install low-level I/O handlers for the C standard library */
     _stdout_install(__putchar);
     _stdin_install(__getchar);
     _stdpoll_install(__kbhit);
-
-    /* Grant U-mode access to all memory for validation purposes.
-     * By default, RISC-V PMP denies all access to U-mode, which would cause
-     * instruction access faults immediately upon task switch. This minimal
-     * setup allows U-mode tasks to execute and serves as a placeholder until
-     * the full PMP driver is integrated.
-     */
-    uint32_t pmpaddr = -1UL; /* Cover entire address space */
-    uint8_t pmpcfg = 0x0F;   /* TOR, R, W, X enabled */
-
-    asm volatile(
-        "csrw pmpaddr0, %0\n"
-        "csrw pmpcfg0, %1\n"
-        :
-        : "r"(pmpaddr), "r"(pmpcfg));
 }
 
 /* Halts the system in an unrecoverable state */
@@ -427,6 +420,16 @@ uint32_t do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp)
             return pending_switch_sp ? (uint32_t) pending_switch_sp : isr_sp;
         }
 
+        /* Attempt to recover PMP access faults (code 5 = load fault, 7 = store
+         * fault) */
+        if (code == 5 || code == 7) {
+            uint32_t mtval = read_csr(mtval);
+            if (pmp_handle_access_fault(mtval, code == 7) == 0) {
+                /* PMP fault handled successfully, return current frame */
+                return isr_sp;
+            }
+        }
+
         /* Print exception info via direct UART (safe in trap context) */
         trap_puts("[EXCEPTION] ");
         if (code < ARRAY_SIZE(exc_msg) && exc_msg[code])
@@ -508,20 +511,16 @@ void *hal_build_initial_frame(void *stack_top,
                       ISR_STACK_FRAME_SIZE);
 
     /* Zero out entire frame */
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 36; i++) {
         frame[i] = 0;
     }
 
     /* Compute tp value same as boot.c: aligned to 64 bytes from _end */
     uint32_t tp_val = ((uint32_t) &_end + 63) & ~63U;
 
-    /* Initialize critical registers for proper task startup:
-     * - frame[1] = gp: Global pointer, required for accessing global variables
-     * - frame[2] = tp: Thread pointer, required for thread-local storage
-     * - frame[32] = mepc: Task entry point, where mret will jump to
-     */
-    frame[1] = (uint32_t) &_gp; /* gp - global pointer */
-    frame[2] = tp_val;          /* tp - thread pointer */
+    /* Initialize critical registers for proper task startup */
+    frame[FRAME_GP] = (uint32_t) &_gp; /* gp - global pointer */
+    frame[FRAME_TP] = tp_val;          /* tp - thread pointer */
 
     /* Initialize mstatus for new task:
      * - MPIE=1: mret will copy this to MIE, enabling interrupts after task
@@ -534,6 +533,10 @@ void *hal_build_initial_frame(void *stack_top,
     frame[FRAME_MSTATUS] = mstatus_val;
 
     frame[FRAME_EPC] = (uint32_t) task_entry; /* mepc - entry point */
+    /* SP value for when ISR returns. Must match the deallocation in
+     * __dispatch_init_isr which adds ISR_STACK_FRAME_SIZE to frame pointer.
+     */
+    frame[FRAME_SP] = (uint32_t) ((uint8_t *) frame + ISR_STACK_FRAME_SIZE);
 
     return (void *) frame;
 }
@@ -811,7 +814,25 @@ static void __attribute__((naked, used)) __dispatch_init_isr(void)
         "lw     t0, 32*4(sp)\n"
         "csrw   mstatus, t0\n"
 
-        /* Restore mepc from frame[31] */
+        /* Initialize mscratch based on MPP field in mstatus.
+         * For M-mode set mscratch to zero, for U-mode set to kernel stack.
+         * ISR uses this to detect privilege mode via blind swap.
+         */
+        "srli   t2, t0, 11\n"
+        "andi   t2, t2, 0x3\n"
+        "bnez   t2, .Ldispatch_mmode\n"
+
+        /* U-mode path */
+        "la     t2, _stack\n"
+        "csrw   mscratch, t2\n"
+        "j      .Ldispatch_done\n"
+
+        /* M-mode path */
+        ".Ldispatch_mmode:\n"
+        "csrw   mscratch, zero\n"
+        ".Ldispatch_done:\n"
+
+        /* Restore mepc */
         "lw     t1, 31*4(sp)\n"
         "csrw   mepc, t1\n"
 

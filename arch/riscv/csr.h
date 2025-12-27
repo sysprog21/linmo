@@ -179,3 +179,82 @@
 
 /* Machine Scratch Register - For temporary storage during traps */
 #define CSR_MSCRATCH 0x340
+
+/* PMP Address Registers (pmpaddr0-pmpaddr15) - 16 regions maximum
+ * In TOR (Top-of-Range) mode, these define the upper boundary of each region.
+ * The lower boundary is defined by the previous region's upper boundary.
+ */
+#define CSR_PMPADDR0 0x3b0
+#define CSR_PMPADDR1 0x3b1
+#define CSR_PMPADDR2 0x3b2
+#define CSR_PMPADDR3 0x3b3
+#define CSR_PMPADDR4 0x3b4
+#define CSR_PMPADDR5 0x3b5
+#define CSR_PMPADDR6 0x3b6
+#define CSR_PMPADDR7 0x3b7
+#define CSR_PMPADDR8 0x3b8
+#define CSR_PMPADDR9 0x3b9
+#define CSR_PMPADDR10 0x3ba
+#define CSR_PMPADDR11 0x3bb
+#define CSR_PMPADDR12 0x3bc
+#define CSR_PMPADDR13 0x3bd
+#define CSR_PMPADDR14 0x3be
+#define CSR_PMPADDR15 0x3bf
+
+/* PMP Configuration Registers (pmpcfg0-pmpcfg3)
+ * Each configuration register controls 4 PMP regions (on RV32).
+ * pmpcfg0 controls pmpaddr0-3, pmpcfg1 controls pmpaddr4-7, etc.
+ */
+#define CSR_PMPCFG0 0x3a0
+#define CSR_PMPCFG1 0x3a1
+#define CSR_PMPCFG2 0x3a2
+#define CSR_PMPCFG3 0x3a3
+
+/* PMP Configuration Field Bits (8 bits per region within pmpcfg)
+ * Layout in each byte of pmpcfg:
+ * Bit 7:     L (Lock) - Locks this region until hardware reset
+ * Bits 6-5:  Reserved
+ * Bits 4-3:  A (Address Matching Mode)
+ * Bit 2:     X (Execute permission)
+ * Bit 1:     W (Write permission)
+ * Bit 0:     R (Read permission)
+ */
+
+/* Lock bit: Prevents further modification of this region */
+#define PMPCFG_L (1U << 7)
+
+/* Address Matching Mode (bits 3-4)
+ * Choose TOR mode for no alignment requirements on region sizes, and support
+ * for arbitrary address ranges.
+ */
+#define PMPCFG_A_SHIFT 3
+#define PMPCFG_A_MASK (0x3U << PMPCFG_A_SHIFT)
+#define PMPCFG_A_OFF (0x0U << PMPCFG_A_SHIFT) /* Null region (disabled) */
+#define PMPCFG_A_TOR (0x1U << PMPCFG_A_SHIFT) /* Top-of-Range mode */
+
+/* Permission bits */
+#define PMPCFG_X (1U << 2) /* Execute permission */
+#define PMPCFG_W (1U << 1) /* Write permission */
+#define PMPCFG_R (1U << 0) /* Read permission */
+
+/* Common permission combinations */
+#define PMPCFG_PERM_NONE (0x0U)                          /* No access */
+#define PMPCFG_PERM_R (PMPCFG_R)                         /* Read-only */
+#define PMPCFG_PERM_RW (PMPCFG_R | PMPCFG_W)             /* Read-Write */
+#define PMPCFG_PERM_X (PMPCFG_X)                         /* Execute-only */
+#define PMPCFG_PERM_RX (PMPCFG_R | PMPCFG_X)             /* Read-Execute */
+#define PMPCFG_PERM_RWX (PMPCFG_R | PMPCFG_W | PMPCFG_X) /* All access */
+
+/* Utility macros for PMP configuration manipulation */
+
+/* Extract PMP address matching mode */
+#define PMPCFG_GET_A(cfg) (((cfg) & PMPCFG_A_MASK) >> PMPCFG_A_SHIFT)
+
+/* Extract permission bits from configuration byte */
+#define PMPCFG_GET_PERM(cfg) ((cfg) & (PMPCFG_R | PMPCFG_W | PMPCFG_X))
+
+/* Check if region is locked */
+#define PMPCFG_IS_LOCKED(cfg) (((cfg) & PMPCFG_L) != 0)
+
+/* Check if region is enabled (address mode is not OFF) */
+#define PMPCFG_IS_ENABLED(cfg) (PMPCFG_GET_A(cfg) != PMPCFG_A_OFF)

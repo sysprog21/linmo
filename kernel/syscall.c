@@ -384,16 +384,25 @@ int sys_uptime(void)
 }
 
 /* User mode safe output syscall.
- * Outputs a string from user mode by executing puts() in kernel context.
- * This avoids privilege violations from printf's logger mutex operations.
+ * Outputs a string from user mode directly via UART, bypassing the logger
+ * queue. Direct output ensures strict ordering for U-mode tasks and avoids race
+ * conditions with the async logger task.
  */
 static int _tputs(const char *str)
 {
     if (unlikely(!str))
         return -EINVAL;
 
-    /* Use puts() which will handle logger enqueue or direct output */
-    return puts(str);
+    /* Prevent task switching during output to avoid character interleaving.
+     * Ensures the entire string is output atomically with respect to other
+     * tasks.
+     */
+    NOSCHED_ENTER();
+    for (const char *p = str; *p; p++)
+        _putchar(*p);
+    NOSCHED_LEAVE();
+
+    return 0;
 }
 
 int sys_tputs(const char *str)

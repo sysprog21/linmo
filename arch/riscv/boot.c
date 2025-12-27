@@ -16,7 +16,7 @@ extern uint32_t _sbss, _ebss;
 
 /* C entry points */
 void main(void);
-void do_trap(uint32_t cause, uint32_t epc);
+void do_trap(uint32_t cause, uint32_t epc, uint32_t isr_sp);
 void hal_panic(void);
 
 /* Machine-mode entry point ('_entry'). This is the first code executed on
@@ -93,22 +93,29 @@ __attribute__((naked, section(".text.prologue"))) void _entry(void)
         : "memory");
 }
 
-/* Size of the full trap context frame saved on the stack by the ISR.
- * 30 GPRs (x1, x3-x31) + mcause + mepc + mstatus = 33 words * 4 bytes = 132
- * bytes. Round up to 144 bytes for 16-byte alignment.
+/* ISR trap frame layout (144 bytes = 36 words).
+ * [0-29]: GPRs (ra, gp, tp, t0-t6, s0-s11, a0-a7)
+ * [30]: mcause
+ * [31]: mepc
+ * [32]: mstatus
+ * [33]: SP (user SP in U-mode, original SP in M-mode)
  */
 #define ISR_CONTEXT_SIZE 144
 
-/* Low-level Interrupt Service Routine (ISR) trampoline.
- *
- * This is the common entry point for all traps. It performs a FULL context
- * save, creating a complete trap frame on the stack. This makes the C handler
- * robust, as it does not need to preserve any registers itself.
- */
+/* Low-level ISR common entry for all traps with full context save */
 __attribute__((naked, aligned(4))) void _isr(void)
 {
     asm volatile(
-        /* Allocate stack frame for full context save */
+        /* Blind swap with mscratch for kernel stack isolation.
+         * Convention: M-mode (mscratch=0, SP=kernel), U-mode (mscratch=kernel,
+         * SP=user). After swap: if SP != 0 came from U-mode, else M-mode.
+         */
+        "csrrw  sp, mscratch, sp\n"
+        "bnez   sp, .Lumode_entry\n"
+
+        /* Undo swap and continue for M-mode */
+        "csrrw  sp, mscratch, sp\n"
+
         "addi   sp, sp, -%0\n"
 
         /* Save all general-purpose registers except x0 (zero) and x2 (sp).
@@ -120,7 +127,7 @@ __attribute__((naked, aligned(4))) void _isr(void)
          *  48: a4,  52: a5,  56: a6,  60: a7,  64: s2,  68: s3
          *  72: s4,  76: s5,  80: s6,  84: s7,  88: s8,  92: s9
          *  96: s10, 100:s11, 104:t3, 108: t4, 112: t5, 116: t6
-         * 120: mcause, 124: mepc
+         * 120: mcause, 124: mepc, 128: mstatus, 132: SP
          */
         "sw  ra,   0*4(sp)\n"
         "sw  gp,   1*4(sp)\n"
@@ -153,33 +160,40 @@ __attribute__((naked, aligned(4))) void _isr(void)
         "sw  t5,  28*4(sp)\n"
         "sw  t6,  29*4(sp)\n"
 
-        /* Save trap-related CSRs and prepare arguments for do_trap */
+        /* Save original SP before frame allocation */
+        "addi   t0, sp, %0\n"
+        "sw     t0, 33*4(sp)\n"
+
+        /* Save machine CSRs (mcause, mepc, mstatus) */
         "csrr   a0, mcause\n"
         "csrr   a1, mepc\n"
-        "csrr   a2, mstatus\n" /* For context switching in privilege change */
-
+        "csrr   a2, mstatus\n"
         "sw     a0,  30*4(sp)\n"
         "sw     a1,  31*4(sp)\n"
         "sw     a2,  32*4(sp)\n"
 
-        "mv     a2, sp\n" /* a2 = isr_sp */
-
-        /* Call the high-level C trap handler.
-         * Returns: a0 = SP to use for restoring context (may be different
-         * task's stack if context switch occurred).
-         */
+        /* Call trap handler with frame pointer */
+        "mv     a2, sp\n"
         "call   do_trap\n"
-
-        /* Use returned SP for context restore (enables context switching) */
         "mv     sp, a0\n"
 
-        /* Restore mstatus from frame[32] */
+        /* Load mstatus and extract MPP to determine M-mode or U-mode return
+           path */
         "lw     t0, 32*4(sp)\n"
         "csrw   mstatus, t0\n"
 
-        /* Restore mepc from frame[31] (might have been modified by handler) */
-        "lw     t1, 31*4(sp)\n"
+        "srli   t1, t0, 11\n"
+        "andi   t1, t1, 0x3\n"
+        "beqz   t1, .Lrestore_umode\n"
+
+        /* M-mode restore */
+        ".Lrestore_mmode:\n"
+        "csrw   mscratch, zero\n"
+
+        "lw     t1, 31*4(sp)\n" /* Restore mepc */
         "csrw   mepc, t1\n"
+
+        /* Restore all GPRs */
         "lw  ra,   0*4(sp)\n"
         "lw  gp,   1*4(sp)\n"
         "lw  tp,   2*4(sp)\n"
@@ -211,12 +225,121 @@ __attribute__((naked, aligned(4))) void _isr(void)
         "lw  t5,  28*4(sp)\n"
         "lw  t6,  29*4(sp)\n"
 
-        /* Deallocate stack frame */
-        "addi   sp, sp, %0\n"
+        /* Restore SP from frame[33] */
+        "lw  sp,  33*4(sp)\n"
 
         /* Return from trap */
         "mret\n"
-        :                       /* no outputs */
-        : "i"(ISR_CONTEXT_SIZE) /* +16 for mcause, mepc, mstatus */
+
+        /* U-mode entry receives kernel stack in SP and user SP in mscratch */
+        ".Lumode_entry:\n"
+        "addi   sp, sp, -%0\n"
+
+        /* Save t6 first to preserve it before using it as scratch */
+        "sw     t6, 29*4(sp)\n"
+
+        /* Retrieve user SP from mscratch into t6 and save it */
+        "csrr   t6, mscratch\n"
+        "sw     t6, 33*4(sp)\n"
+
+        /* Save remaining GPRs */
+        "sw  ra,   0*4(sp)\n"
+        "sw  gp,   1*4(sp)\n"
+        "sw  tp,   2*4(sp)\n"
+        "sw  t0,   3*4(sp)\n"
+        "sw  t1,   4*4(sp)\n"
+        "sw  t2,   5*4(sp)\n"
+        "sw  s0,   6*4(sp)\n"
+        "sw  s1,   7*4(sp)\n"
+        "sw  a0,   8*4(sp)\n"
+        "sw  a1,   9*4(sp)\n"
+        "sw  a2,  10*4(sp)\n"
+        "sw  a3,  11*4(sp)\n"
+        "sw  a4,  12*4(sp)\n"
+        "sw  a5,  13*4(sp)\n"
+        "sw  a6,  14*4(sp)\n"
+        "sw  a7,  15*4(sp)\n"
+        "sw  s2,  16*4(sp)\n"
+        "sw  s3,  17*4(sp)\n"
+        "sw  s4,  18*4(sp)\n"
+        "sw  s5,  19*4(sp)\n"
+        "sw  s6,  20*4(sp)\n"
+        "sw  s7,  21*4(sp)\n"
+        "sw  s8,  22*4(sp)\n"
+        "sw  s9,  23*4(sp)\n"
+        "sw  s10, 24*4(sp)\n"
+        "sw  s11, 25*4(sp)\n"
+        "sw  t3,  26*4(sp)\n"
+        "sw  t4,  27*4(sp)\n"
+        "sw  t5,  28*4(sp)\n"
+        /* t6 already saved */
+
+        /* Save CSRs */
+        "csrr   a0, mcause\n"
+        "csrr   a1, mepc\n"
+        "csrr   a2, mstatus\n"
+        "sw     a0,  30*4(sp)\n"
+        "sw     a1,  31*4(sp)\n"
+        "sw     a2,  32*4(sp)\n"
+
+        "mv     a2, sp\n" /* a2 = ISR frame pointer */
+        "call   do_trap\n"
+        "mv     sp, a0\n"
+
+        /* Check MPP in mstatus to determine return path */
+        "lw     t0, 32*4(sp)\n"
+        "csrw   mstatus, t0\n"
+
+        "srli   t1, t0, 11\n"
+        "andi   t1, t1, 0x3\n"
+        "bnez   t1, .Lrestore_mmode\n"
+
+        /* Setup mscratch for U-mode restore to prepare for next trap */
+        ".Lrestore_umode:\n"
+        "la     t1, _stack\n"
+        "csrw   mscratch, t1\n"
+
+        "lw     t1, 31*4(sp)\n"
+        "csrw   mepc, t1\n"
+
+        /* Restore all GPRs */
+        "lw  ra,   0*4(sp)\n"
+        "lw  gp,   1*4(sp)\n"
+        "lw  tp,   2*4(sp)\n"
+        "lw  t0,   3*4(sp)\n"
+        "lw  t1,   4*4(sp)\n"
+        "lw  t2,   5*4(sp)\n"
+        "lw  s0,   6*4(sp)\n"
+        "lw  s1,   7*4(sp)\n"
+        "lw  a0,   8*4(sp)\n"
+        "lw  a1,   9*4(sp)\n"
+        "lw  a2,  10*4(sp)\n"
+        "lw  a3,  11*4(sp)\n"
+        "lw  a4,  12*4(sp)\n"
+        "lw  a5,  13*4(sp)\n"
+        "lw  a6,  14*4(sp)\n"
+        "lw  a7,  15*4(sp)\n"
+        "lw  s2,  16*4(sp)\n"
+        "lw  s3,  17*4(sp)\n"
+        "lw  s4,  18*4(sp)\n"
+        "lw  s5,  19*4(sp)\n"
+        "lw  s6,  20*4(sp)\n"
+        "lw  s7,  21*4(sp)\n"
+        "lw  s8,  22*4(sp)\n"
+        "lw  s9,  23*4(sp)\n"
+        "lw  s10, 24*4(sp)\n"
+        "lw  s11, 25*4(sp)\n"
+        "lw  t3,  26*4(sp)\n"
+        "lw  t4,  27*4(sp)\n"
+        "lw  t5,  28*4(sp)\n"
+        "lw  t6,  29*4(sp)\n"
+
+        /* Restore user SP from frame[33] */
+        "lw  sp,  33*4(sp)\n"
+
+        /* Return from trap */
+        "mret\n"
+        : /* no outputs */
+        : "i"(ISR_CONTEXT_SIZE)
         : "memory");
 }

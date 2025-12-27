@@ -3,13 +3,16 @@
 #include <types.h>
 
 /* Symbols from the linker script, defining memory boundaries */
-extern uint32_t _stack_start, _stack_end; /* Start/end of the STACK memory */
-extern uint32_t _heap_start, _heap_end;   /* Start/end of the HEAP memory */
-extern uint32_t _heap_size;               /* Size of HEAP memory */
+extern uint32_t _gp;            /* Global pointer initialized at reset */
+extern uint32_t _stack;         /* Kernel stack top for ISR and boot */
+extern uint32_t _stext, _etext; /* Start/end of the .text section */
 extern uint32_t _sidata;        /* Start address for .data initialization */
 extern uint32_t _sdata, _edata; /* Start/end address for .data section */
 extern uint32_t _sbss, _ebss;   /* Start/end address for .bss section */
 extern uint32_t _end;           /* End of kernel image */
+extern uint32_t _heap_start, _heap_end;    /* Start/end of the HEAP memory */
+extern uint32_t _heap_size;                /* Size of HEAP memory */
+extern uint32_t _stack_bottom, _stack_top; /* Bottom/top of the STACK memory */
 
 /* Read a RISC-V Control and Status Register (CSR).
  * @reg : The symbolic name of the CSR (e.g., mstatus).
@@ -26,6 +29,25 @@ extern uint32_t _end;           /* End of kernel image */
  * @val : The 32-bit value to write.
  */
 #define write_csr(reg, val) ({ asm volatile("csrw " #reg ", %0" ::"rK"(val)); })
+
+/* Read CSR by numeric address (for dynamic register selection).
+ * Used when CSR number is not known at compile-time (e.g., PMP registers).
+ * @csr_num : CSR address as a compile-time constant.
+ */
+#define read_csr_num(csr_num)                                     \
+    ({                                                            \
+        uint32_t __tmp;                                           \
+        asm volatile("csrr %0, %1" : "=r"(__tmp) : "i"(csr_num)); \
+        __tmp;                                                    \
+    })
+
+/* Write CSR by numeric address (for dynamic register selection).
+ * Used when CSR number is not known at compile-time (e.g., PMP registers).
+ * @csr_num : CSR address as a compile-time constant.
+ * @val : The 32-bit value to write.
+ */
+#define write_csr_num(csr_num, val) \
+    ({ asm volatile("csrw %0, %1" ::"i"(csr_num), "rK"(val)); })
 
 /* Globally enable or disable machine-level interrupts by setting mstatus.MIE.
  * @enable : Non-zero to enable, zero to disable.
@@ -135,3 +157,10 @@ void hal_cpu_idle(void);
 
 /* Default stack size for new tasks if not otherwise specified */
 #define DEFAULT_STACK_SIZE 8192
+
+/* Physical Memory Protection (PMP) region limit constants */
+#define PMP_MAX_REGIONS 16 /* RISC-V supports 16 PMP regions */
+#define PMP_TOR_PAIRS \
+    8 /* In TOR mode, 16 regions = 8 pairs (uses 2 addrs each) */
+#define MIN_PMP_REGION_SIZE \
+    4 /* Minimum addressable size in TOR mode (4 bytes) */
