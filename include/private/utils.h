@@ -30,6 +30,17 @@
  */
 #define ALIGN4(x) ((((uint32_t) (x) + 3u) >> 2) << 2)
 
+/* Fast range check using bit operations.
+ * Checks if x is in range [minx, minx + size - 1].
+ * Faster than (x >= minx && x < minx + size) due to fewer branches.
+ * For any variable range checking:
+ *     if (x >= minx && x <= maxx) ...
+ * it is faster to use bit operation:
+ *     if ((signed)((x - minx) | (maxx - x)) >= 0) ...
+ */
+#define RANGE_CHECK(x, minx, size) \
+    ((int32_t) (((x) - (minx)) | ((minx) + (size) - 1 - (x))) >= 0)
+
 /* Power-of-2 Utility Functions
  *
  * Efficient bit manipulation functions for power-of-2 operations,
