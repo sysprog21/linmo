@@ -750,7 +750,7 @@ void hal_switch_stack(void **old_sp, void *new_sp)
  */
 void hal_interrupt_tick(void)
 {
-    tcb_t *task = kcb->task_current->data;
+    tcb_t *task = tcb_from_global_node(kcb->task_current);
     if (unlikely(!task))
         hal_panic();
 

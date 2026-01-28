@@ -39,6 +39,10 @@ typedef struct {
     /* Callback Configuration */
     void *(*callback)(void *arg); /* Function to execute upon timer expiry */
     void *arg;                    /* User-defined argument passed to callback */
+
+    /* Embedded node for timer */
+    list_node_t t_node;         /* All timer list node*/
+    list_node_t t_running_node; /* Running timer list node */
 } timer_t;
 
 /* Timer Management Functions */

@@ -404,12 +404,7 @@ static int32_t edf_sched(void)
     /* Scan all tasks to find the one with earliest deadline */
     list_node_t *node = list_next(kcb->tasks->head);
     while (node && node != kcb->tasks->tail) {
-        if (!node->data) {
-            node = list_next(node);
-            continue;
-        }
-
-        tcb_t *task = (tcb_t *) node->data;
+        tcb_t *task = tcb_from_global_node(node);
 
         /* Consider both READY and RUNNING RT tasks for preemptive scheduling */
         if ((task->state == TASK_READY || task->state == TASK_RUNNING) &&

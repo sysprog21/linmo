@@ -15,7 +15,6 @@
 /* List node */
 typedef struct list_node {
     struct list_node *next;
-    void *data;
 } list_node_t;
 
 /* Public list descriptor */
@@ -45,10 +44,8 @@ static inline list_t *list_create(void)
     }
 
     head->next = tail;
-    head->data = NULL;
 
     tail->next = NULL;
-    tail->data = NULL;
 
     list->head = head;
     list->tail = tail;
@@ -78,16 +75,11 @@ static inline list_node_t *list_cnext(const list_t *list,
 
 /* Push and pop */
 
-static inline list_node_t *list_pushback(list_t *list, void *data)
+static inline list_node_t *list_pushback(list_t *list, list_node_t *node)
 {
-    if (unlikely(!list))
+    if (unlikely(!list || !node || node->next))
         return NULL;
 
-    list_node_t *node = malloc(sizeof(*node));
-    if (unlikely(!node))
-        return NULL;
-
-    node->data = data;
     node->next = list->tail;
 
     /* Insert before tail sentinel */
@@ -100,22 +92,21 @@ static inline list_node_t *list_pushback(list_t *list, void *data)
     return node;
 }
 
-static inline void *list_pop(list_t *list)
+static inline list_node_t *list_pop(list_t *list)
 {
     if (unlikely(list_is_empty(list)))
         return NULL;
 
     list_node_t *first = list->head->next;
     list->head->next = first->next;
+    first->next = NULL;
 
-    void *data = first->data;
-    free(first);
     list->length--;
-    return data;
+    return first;
 }
 
-/* Remove a specific node; returns its data */
-static inline void *list_remove(list_t *list, list_node_t *target)
+/* Remove a specific node from the list */
+static inline list_node_t *list_remove(list_t *list, list_node_t *target)
 {
     if (unlikely(!list || !target || list_is_empty(list)))
         return NULL;
@@ -128,10 +119,9 @@ static inline void *list_remove(list_t *list, list_node_t *target)
         return NULL; /* node not found */
 
     prev->next = target->next;
-    void *data = target->data;
-    free(target);
+    target->next = NULL;
     list->length--;
-    return data;
+    return target;
 }
 
 /* Iteration */
