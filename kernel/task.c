@@ -395,7 +395,7 @@ static void task_cleanup_zombies(void)
         list_node_t *next = list_next(node);
         tcb_t *tcb = node->data;
 
-        if (tcb && tcb->state == TASK_ZOMBIE) {
+        if (tcb && tcb->state == TASK_ZOMBIE && node != kcb->task_current) {
             /* Remove from task list */
             list_remove(kcb->tasks, node);
             kcb->task_count--;
@@ -992,8 +992,21 @@ int32_t mo_task_spawn_user(void *task_entry, uint16_t stack_size)
 
 int32_t mo_task_cancel(uint16_t id)
 {
-    if (id == 0 || id == mo_task_id())
+    if (id == 0)
         return ERR_TASK_CANT_REMOVE;
+
+    /* Self-termination marks the task as zombie and yields to the scheduler.
+     * The dispatcher will reclaim resources after context switch completes.
+     */
+    if (id == mo_task_id()) {
+        tcb_t *self = kcb->task_current->data;
+        CRITICAL_ENTER();
+        self->state = TASK_ZOMBIE;
+        CRITICAL_LEAVE();
+        _yield();
+        while (1)
+            ;
+    }
 
     CRITICAL_ENTER();
     list_node_t *node = find_task_node_by_id(id);

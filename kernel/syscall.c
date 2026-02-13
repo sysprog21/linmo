@@ -266,8 +266,10 @@ int sys_task_spawn(void *task, int stack_size)
 
 static int _tcancel(int id)
 {
-    if (unlikely(id <= 0))
+    if (unlikely(id <= 0 || id > (int) UINT16_MAX))
         return -EINVAL;
+    if ((uint16_t) id != mo_task_id())
+        return -EPERM;
 
     return mo_task_cancel(id);
 }
@@ -304,8 +306,10 @@ int sys_tdelay(int ticks)
 
 static int _tsuspend(int id)
 {
-    if (unlikely(id <= 0))
+    if (unlikely(id <= 0 || id > (int) UINT16_MAX))
         return -EINVAL;
+    if ((uint16_t) id != mo_task_id())
+        return -EPERM;
 
     return mo_task_suspend(id);
 }
@@ -317,10 +321,9 @@ int sys_tsuspend(int id)
 
 static int _tresume(int id)
 {
-    if (unlikely(id <= 0))
-        return -EINVAL;
-
-    return mo_task_resume(id);
+    (void) id;
+    /* U-mode cannot resume any task; suspended task cannot call syscall */
+    return -EPERM;
 }
 
 int sys_tresume(int id)
@@ -330,8 +333,10 @@ int sys_tresume(int id)
 
 static int _tpriority(int id, int priority)
 {
-    if (unlikely(id <= 0))
+    if (unlikely(id <= 0 || id > (int) UINT16_MAX))
         return -EINVAL;
+    if ((uint16_t) id != mo_task_id())
+        return -EPERM;
 
     return mo_task_priority(id, priority);
 }
