@@ -9,6 +9,7 @@
 #include <lib/libc.h>
 #include <lib/queue.h>
 #include <pmp.h>
+#include <sys/debug_trace.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -374,7 +375,12 @@ void panic(int32_t ecode)
     hal_panic();
 }
 
-/* Weak aliases for context switching functions. */
+/* Weak aliases for context switching functions.
+ *
+ * yield() is the internal scheduler primitive used by both explicit and
+ * implicit reschedule paths. EVENT_TASK_YIELD must stay above this layer so
+ * delay/block/suspend driven handoffs are not misreported as explicit yields.
+ */
 void dispatch(void);
 void yield(void);
 void _dispatch(void) __attribute__((weak, alias("dispatch")));
@@ -692,6 +698,14 @@ void dispatch(void)
         next_task->state = TASK_RUNNING;
     next_task->time_slice = get_priority_timeslice(next_task->prio_level);
 
+/* Record switches only in tracing-enabled builds so the disabled scheduler
+ * path keeps upstream behavior and pays no trace-only branch cost.
+ */
+#if CONFIG_DEBUG_TRACE
+    if (next_task != prev_task)
+        debug_trace_event(EVENT_TASK_SWITCH, prev_task->id, next_task->id);
+#endif
+
     /* Switch PMP configuration if tasks have different memory spaces */
     pmp_switch_context(prev_task->mspace, next_task->mspace);
 
@@ -949,6 +963,9 @@ static int32_t task_spawn_internal(void *task_entry,
     /* Add to cache and mark ready */
     cache_task(tcb->id, tcb);
     sched_enqueue_task(tcb);
+#if CONFIG_DEBUG_TRACE
+    debug_trace_event(EVENT_TASK_CREATE, tcb->id, tcb->prio_level);
+#endif
 
     return tcb->id;
 }
@@ -1003,6 +1020,9 @@ int32_t mo_task_cancel(uint16_t id)
     }
 
     tcb_t *tcb = node->data;
+#if CONFIG_DEBUG_TRACE
+    uint16_t previous_state = tcb ? tcb->state : 0;
+#endif
     if (!tcb || tcb->state == TASK_RUNNING) {
         CRITICAL_LEAVE();
         return ERR_TASK_CANT_REMOVE;
@@ -1020,6 +1040,9 @@ int32_t mo_task_cancel(uint16_t id)
         }
     }
 
+#if CONFIG_DEBUG_TRACE
+    debug_trace_event(EVENT_TASK_DESTROY, id, previous_state);
+#endif
     CRITICAL_LEAVE();
 
     /* Free memory outside critical section */
@@ -1034,7 +1057,19 @@ int32_t mo_task_cancel(uint16_t id)
 
 void mo_task_yield(void)
 {
-    _yield();
+    if (unlikely(!kcb || !kcb->task_current || !kcb->task_current->data))
+        return;
+
+    /* Trace only the explicit public API. Internal reschedule paths still
+     * funnel through yield()/_yield() but intentionally do not emit
+     * EVENT_TASK_YIELD.
+     */
+#if CONFIG_DEBUG_TRACE
+    NOSCHED_ENTER();
+    debug_trace_event(EVENT_TASK_YIELD, mo_task_id(), 0);
+    NOSCHED_LEAVE();
+#endif
+    yield();
 }
 
 void mo_task_delay(uint16_t ticks)
@@ -1056,9 +1091,12 @@ void mo_task_delay(uint16_t ticks)
     /* Set delay and blocked state - scheduler will skip blocked tasks */
     self->delay = ticks;
     self->state = TASK_BLOCKED;
+#if CONFIG_DEBUG_TRACE
+    debug_trace_event(EVENT_TASK_DELAY, ticks, 0);
+#endif
     NOSCHED_LEAVE();
 
-    mo_task_yield();
+    _yield();
 }
 
 int32_t mo_task_suspend(uint16_t id)
@@ -1082,11 +1120,13 @@ int32_t mo_task_suspend(uint16_t id)
 
     task->state = TASK_SUSPENDED;
     bool is_current = (kcb->task_current->data == task);
-
+#if CONFIG_DEBUG_TRACE
+    debug_trace_event(EVENT_TASK_SUSPEND, id, 0);
+#endif
     CRITICAL_LEAVE();
 
     if (is_current)
-        mo_task_yield();
+        _yield();
 
     return ERR_OK;
 }
@@ -1111,7 +1151,9 @@ int32_t mo_task_resume(uint16_t id)
 
     /* mark as ready - scheduler will find it */
     task->state = TASK_READY;
-
+#if CONFIG_DEBUG_TRACE
+    debug_trace_event(EVENT_TASK_RESUME, id, 0);
+#endif
     CRITICAL_LEAVE();
     return ERR_OK;
 }

@@ -14,7 +14,7 @@ BUILD_LIB_DIR := $(BUILD_DIR)/lib
 MMODE_APPS := cond coop cpubench echo hello mqueues mutex \
               pipes pipes_small pipes_struct prodcons progress \
               rtsched semaphore suspend test64 test_libc timer timer_kill \
-              privilege_switch
+              privilege_switch trace_sched
 
 # Auto-detect: if building an M-mode app, enable CONFIG_PRIVILEGED
 ifneq ($(filter $(MAKECMDGOALS),$(MMODE_APPS)),)
@@ -29,7 +29,7 @@ include arch/$(ARCH)/build.mk
 INC_DIRS += -I $(SRC_DIR)/include \
             -I $(SRC_DIR)/include/lib
 
-KERNEL_OBJS := timer.o mqueue.o pipe.o semaphore.o mutex.o logger.o error.o syscall.o task.o memprot.o main.o
+KERNEL_OBJS := timer.o mqueue.o pipe.o semaphore.o mutex.o logger.o error.o syscall.o task.o memprot.o debug_trace.o main.o
 KERNEL_OBJS := $(addprefix $(BUILD_KERNEL_DIR)/,$(KERNEL_OBJS))
 deps += $(KERNEL_OBJS:%.o=%.o.d)
 
@@ -41,7 +41,7 @@ deps += $(LIB_OBJS:%.o=%.o.d)
 APPS := coop echo hello mqueues semaphore mutex cond \
         pipes pipes_small pipes_struct prodcons progress \
         rtsched suspend test64 timer timer_kill \
-        cpubench test_libc umode privilege_switch pmp
+        cpubench test_libc umode privilege_switch pmp trace_sched
 
 # Output files for __link target
 IMAGE_BASE := $(BUILD_DIR)/image
