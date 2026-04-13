@@ -146,6 +146,10 @@ static void worker_b(void)
 
 static void verifier(void)
 {
+    uint32_t trace_count;
+    uint32_t trace_overwrites;
+    uint32_t total_events;
+
     while (!scenario_done)
         mo_task_wfi();
 
@@ -210,6 +214,14 @@ static void verifier(void)
     printf("Tests passed: %d\n", tests_passed);
     printf("Tests failed: %d\n", tests_failed);
     printf("Overall: %s\n", tests_failed == 0 ? "PASS" : "FAIL");
+    if (tests_failed == 0) {
+        trace_count = debug_trace_count();
+        trace_overwrites = debug_trace_overwrites();
+        total_events = trace_count + trace_overwrites;
+
+        printf("Trace totals: count=%u overwrites=%u total_events=%u\n",
+               trace_count, trace_overwrites, total_events);
+    }
     if (tests_failed != 0)
         debug_dump_events();
 
