@@ -59,7 +59,9 @@ void debug_trace_event(uint8_t event_type, uint32_t param1, uint32_t param2)
     debug_event_t *event = &event_buffer[event_write_index];
     event->timestamp = kcb ? kcb->ticks : 0;
     event->event_type = event_type;
-    event->task_id = kcb ? mo_task_id() : 0;
+    event->task_id = (kcb && kcb->task_current && kcb->task_current->data)
+                         ? ((tcb_t *) kcb->task_current->data)->id
+                         : 0;
     event->reserved = 0;
     event->param1 = param1;
     event->param2 = param2;
