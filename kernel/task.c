@@ -9,6 +9,7 @@
 #include <lib/libc.h>
 #include <lib/queue.h>
 #include <pmp.h>
+#include <sys/debug_trace.h>
 #include <sys/task.h>
 
 #include "private/error.h"
@@ -692,6 +693,9 @@ void dispatch(void)
         next_task->state = TASK_RUNNING;
     next_task->time_slice = get_priority_timeslice(next_task->prio_level);
 
+    if (next_task != prev_task)
+        DEBUG_TRACE_EVENT(EVENT_TASK_SWITCH, prev_task->id, next_task->id);
+
     /* Switch PMP configuration if tasks have different memory spaces */
     pmp_switch_context(prev_task->mspace, next_task->mspace);
 
@@ -949,6 +953,7 @@ static int32_t task_spawn_internal(void *task_entry,
     /* Add to cache and mark ready */
     cache_task(tcb->id, tcb);
     sched_enqueue_task(tcb);
+    DEBUG_TRACE_EVENT(EVENT_TASK_CREATE, tcb->id, tcb->prio_level);
 
     return tcb->id;
 }
@@ -1003,6 +1008,9 @@ int32_t mo_task_cancel(uint16_t id)
     }
 
     tcb_t *tcb = node->data;
+#if CONFIG_DEBUG_TRACE
+    uint16_t previous_state = tcb ? tcb->state : 0;
+#endif
     if (!tcb || tcb->state == TASK_RUNNING) {
         CRITICAL_LEAVE();
         return ERR_TASK_CANT_REMOVE;
@@ -1020,6 +1028,9 @@ int32_t mo_task_cancel(uint16_t id)
         }
     }
 
+#if CONFIG_DEBUG_TRACE
+    DEBUG_TRACE_EVENT(EVENT_TASK_DESTROY, id, previous_state);
+#endif
     CRITICAL_LEAVE();
 
     /* Free memory outside critical section */
@@ -1034,6 +1045,10 @@ int32_t mo_task_cancel(uint16_t id)
 
 void mo_task_yield(void)
 {
+    /* TASK_YIELD tracks explicit mo_task_yield() calls only. Other reschedule
+     * paths call _yield() directly and must not emit this event.
+     */
+    DEBUG_TRACE_EVENT(EVENT_TASK_YIELD);
     _yield();
 }
 
@@ -1056,9 +1071,10 @@ void mo_task_delay(uint16_t ticks)
     /* Set delay and blocked state - scheduler will skip blocked tasks */
     self->delay = ticks;
     self->state = TASK_BLOCKED;
+    DEBUG_TRACE_EVENT(EVENT_TASK_DELAY, ticks, self->id);
     NOSCHED_LEAVE();
 
-    mo_task_yield();
+    _yield();
 }
 
 int32_t mo_task_suspend(uint16_t id)
@@ -1082,11 +1098,11 @@ int32_t mo_task_suspend(uint16_t id)
 
     task->state = TASK_SUSPENDED;
     bool is_current = (kcb->task_current->data == task);
-
+    DEBUG_TRACE_EVENT(EVENT_TASK_SUSPEND, id);
     CRITICAL_LEAVE();
 
     if (is_current)
-        mo_task_yield();
+        _yield();
 
     return ERR_OK;
 }
@@ -1111,7 +1127,7 @@ int32_t mo_task_resume(uint16_t id)
 
     /* mark as ready - scheduler will find it */
     task->state = TASK_READY;
-
+    DEBUG_TRACE_EVENT(EVENT_TASK_RESUME, id);
     CRITICAL_LEAVE();
     return ERR_OK;
 }
