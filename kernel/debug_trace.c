@@ -16,6 +16,7 @@
  */
 uint32_t debug_trace_buffer[DEBUG_EVENT_BUFFER_SIZE * DEBUG_TRACE_EVENT_WORDS];
 volatile uint32_t debug_trace_total;
+static uint32_t _tr_snap[DEBUG_EVENT_BUFFER_SIZE * DEBUG_TRACE_EVENT_WORDS];
 
 /* ------------------------------------------------------------------ *
  * Internal helpers
@@ -75,10 +76,11 @@ static bool retained_sequence(uint32_t index, uint32_t *seq_out)
 #define DEFINE_EVENT_CLASS(...)  /* nothing */
 #define __field(...)             /* nothing */
 
-#define DEFINE_EVENT(name, cls, prot, proto, ...)                        \
-	static void _tr_print_EVENT_##name(uint32_t idx, uint32_t base) { \
-		const struct debug_event_cls_##cls *_e =                 \
-			(const void *)&debug_trace_buffer[base];         \
+#define DEFINE_EVENT(name, cls, prot, proto, ...)                                  \
+	static void _tr_print_EVENT_##name(uint32_t idx, const uint32_t *buf,      \
+					   uint32_t base) {                             \
+		const struct debug_event_cls_##cls *_e =                           \
+			(const void *)&buf[base];         \
 		printf("[%u] %14s ts=%u", idx, #name, _e->timestamp);   \
 		_TR_FOR_EACH_PAIR(__VA_ARGS__)                           \
 		(void)_tr_has_print;                                     \
@@ -96,7 +98,7 @@ static bool retained_sequence(uint32_t index, uint32_t *seq_out)
  * _tr_print_EVENT_##name handler.
  * ================================================================== */
 
-static void (*const _tr_print_fn[EVENT_TYPE_MAX])(uint32_t, uint32_t) = {
+static void (*const _tr_print_fn[EVENT_TYPE_MAX])(uint32_t, const uint32_t *, uint32_t) = {
 #define DEFINE_EVENT_CLASS(...)  /* nothing */
 #define __field(...)             /* nothing */
 #define DEFINE_EVENT(name, ...)  [EVENT_##name] = _tr_print_EVENT_##name,
@@ -107,12 +109,12 @@ static void (*const _tr_print_fn[EVENT_TYPE_MAX])(uint32_t, uint32_t) = {
 #undef __field
 #undef DEFINE_EVENT_CLASS
 
-static void _tr_print_event(uint32_t idx, uint32_t base)
+static void _tr_print_event(uint32_t idx, const uint32_t *buf, uint32_t base)
 {
-	uint8_t ev = debug_trace_buffer[base] & 0xFFU;
+	uint8_t ev = buf[base] & 0xFFU;
 
 	if (ev < EVENT_TYPE_MAX && _tr_print_fn[ev])
-		_tr_print_fn[ev](idx, base);
+		_tr_print_fn[ev](idx, buf, base);
 	else
 		printf("[%u] UNKNOWN\n", idx);
 }
@@ -125,26 +127,34 @@ void debug_dump_events(void)
 {
 	uint32_t count;
 	uint32_t overwrites;
-	uint32_t first_seq;
-	CRITICAL_ENTER();
+	uint32_t total;
 
-	count      = retained_count_locked();
-	overwrites = overwrite_count_locked();
-	first_seq  = (debug_trace_total > DEBUG_EVENT_BUFFER_SIZE)
-		? debug_trace_total - DEBUG_EVENT_BUFFER_SIZE
-		: 0U;
+	/*
+	 * snapshot the entire ring buffer inside the critical
+	 * section so the slow per‑event printf loop
+	 * runs with interrupts enabled.
+	 */
+	CRITICAL_ENTER();
+	__builtin_memcpy(_tr_snap, (const void *)debug_trace_buffer,
+			 sizeof(_tr_snap));
+	total      = debug_trace_total;
+	CRITICAL_LEAVE();
+
+	count      = (total < DEBUG_EVENT_BUFFER_SIZE)
+			? total : DEBUG_EVENT_BUFFER_SIZE;
+	overwrites = (total > DEBUG_EVENT_BUFFER_SIZE)
+			? total - DEBUG_EVENT_BUFFER_SIZE : 0U;
 
 	printf("debug trace: %u retained event%s, %u overwrite%s\n", count,
 	       (count == 1U) ? "" : "s", overwrites,
 	       (overwrites == 1U) ? "" : "s");
 
 	for (uint32_t i = 0U; i < count; i++) {
-		uint32_t base = DEBUG_TRACE_BUFFER_INDEX(first_seq + i) * DEBUG_TRACE_EVENT_WORDS;
+		uint32_t base = DEBUG_TRACE_BUFFER_INDEX(total - count + i)
+				* DEBUG_TRACE_EVENT_WORDS;
 
-		_tr_print_event(i, base);
+		_tr_print_event(i, _tr_snap, base);
 	}
-
-	CRITICAL_LEAVE();
 }
 
 void debug_clear_events(void)
