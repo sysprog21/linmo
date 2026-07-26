@@ -17,6 +17,7 @@
 uint32_t debug_trace_buffer[DEBUG_EVENT_BUFFER_SIZE * DEBUG_TRACE_EVENT_WORDS];
 volatile uint32_t debug_trace_total;
 static uint32_t _tr_snap[DEBUG_EVENT_BUFFER_SIZE * DEBUG_TRACE_EVENT_WORDS];
+static volatile bool _tr_dumping;
 
 /* ------------------------------------------------------------------ *
  * Internal helpers
@@ -135,6 +136,11 @@ void debug_dump_events(void)
 	 * runs with interrupts enabled.
 	 */
 	CRITICAL_ENTER();
+	if (_tr_dumping) {
+		CRITICAL_LEAVE();
+		return;
+	}
+	_tr_dumping = true;
 	__builtin_memcpy(_tr_snap, (const void *)debug_trace_buffer,
 			 sizeof(_tr_snap));
 	total      = debug_trace_total;
@@ -155,6 +161,8 @@ void debug_dump_events(void)
 
 		_tr_print_event(i, _tr_snap, base);
 	}
+
+	_tr_dumping = false;
 }
 
 void debug_clear_events(void)
